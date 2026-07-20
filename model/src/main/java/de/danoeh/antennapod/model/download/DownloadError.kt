@@ -1,7 +1,7 @@
-package de.danoeh.antennapod.model.download;
+package de.danoeh.antennapod.model.download
 
 /** Utility class for Download Errors. */
-public enum DownloadError {
+enum class DownloadError(private val code: Int) {
     SUCCESS(0),
     ERROR_PARSER_EXCEPTION(1),
     ERROR_UNSUPPORTED_TYPE(2),
@@ -24,26 +24,24 @@ public enum DownloadError {
     ERROR_UNSUPPORTED_TYPE_HTML(19),
     ERROR_NOT_FOUND(20),
     ERROR_CERTIFICATE(21),
-    ERROR_PARSER_EXCEPTION_DUPLICATE(22);
-
-    private final int code;
-
-    DownloadError(int code) {
-        this.code = code;
-    }
-
-    /** Return DownloadError from its associated code. */
-    public static DownloadError fromCode(int code) {
-        for (DownloadError reason : values()) {
-            if (reason.getCode() == code) {
-                return reason;
-            }
-        }
-        throw new IllegalArgumentException("unknown code: " + code);
-    }
+    ERROR_PARSER_EXCEPTION_DUPLICATE(22)
+    ;
 
     /** Get machine-readable code. */
-    public int getCode() {
-        return code;
+    fun getCode(): Int {
+        return code
+    }
+
+    companion object {
+        /** Return DownloadError from its associated code. */
+        @JvmStatic
+        fun fromCode(code: Int): DownloadError {
+            for (reason in entries) {
+                if (reason.getCode() == code) {
+                    return reason
+                }
+            }
+            throw IllegalArgumentException("unknown code: $code")
+        }
     }
 }
