@@ -4,7 +4,7 @@
 > **Task file:** `tasks/antennapod-model-kotlin.md`
 
 ## Status
-**ALL PIPELINE GATES PASSED — ready for branch/commit/push/PR. Awaiting José's go-ahead before any git-visible action.**
+**DONE — both PRs opened. Milestone 1 complete.**
 
 ## Last updated
 2026-07-20
@@ -16,7 +16,9 @@
 - [x] Implement (android-migration-developer)
 - [x] Code review (migration-code-reviewer) — REQUEST CHANGES loop 1 (one MAJOR finding: Deviations write-up cited wrong exception type for a pre-existing/unrelated `LocalFeedUpdaterTest` failure — doc-only fix, no code change), fixed and re-reviewed → APPROVE loop 2
 - [x] Red-team implementation (legacy-android-red-team) — CHALLENGE loop 1 (MAJOR: CI never invoked `ktlintCheck`; MINOR: `model/README.md` stale) — both out of original File Scope; José chose to fix both now rather than defer (File Scope explicitly expanded, documented in task file). Fixed (`.github/workflows/checks.yml` static-analysis job + `model/README.md`), re-reviewed → APPROVE loop 2 (final loop)
-- [ ] PR opened
+- [x] PR opened — **two PRs**, per José's choice to keep code and spec-workflow docs separate:
+  - **PR #1 (code):** https://github.com/josegbel/antenna-pod-kt/pull/1 — branch `kotlin/model-module-milestone-1` → `develop`. The 8 Java→Kotlin conversions + tests + `model/build.gradle` + CI ktlint step + `model/README.md` fix.
+  - **PR #2 (docs):** https://github.com/josegbel/antenna-pod-kt/pull/2 — branch `docs/antennapod-model-kotlin-spec` → `develop`. `tasks/antennapod-model-kotlin.md` + `features/antennapod-model-kotlin.checkpoint.md` (this file).
 
 ## Decisions for next session
 - Module: `model` (de.danoeh.antennapod.model). Track: `kotlin` only, for now — this is the first module/track of a portfolio case study, not a full-package migration. Other tracks/modules can be scoped as separate follow-on tasks once this one is reviewed.
