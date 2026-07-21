@@ -4,10 +4,10 @@
 > **Task file:** `tasks/antennapod-model-kotlin-milestone-2.md`
 
 ## Status
-**PIPELINE COMPLETE — implementation red-team APPROVE (loop 2 of max 2, final). Ready to open PR(s).**
+**DONE — both PRs opened. Milestone 2 complete.**
 
 ## Last updated
-2026-07-20 by legacy-android-red-team
+2026-07-21
 
 ## Lifecycle progress
 - [x] Research (legacy-android-researcher)
@@ -16,7 +16,9 @@
 - [x] Implement (android-migration-developer)
 - [x] Code review (migration-code-reviewer) — APPROVE, loop 2 of max 3 (loop 1's CRITICAL finding fixed and verified)
 - [x] Red-team implementation (legacy-android-red-team) — APPROVE, loop 2 of max 2 (final; loop 1's CRITICAL `serialVersionUID` finding fixed and verified, see below)
-- [ ] PR opened
+- [x] PR opened — **two PRs**, per José's choice to keep this consistent with Milestone 1's split:
+  - **PR #3 (code):** https://github.com/josegbel/antenna-pod-kt/pull/3 — branch `kotlin/model-module-milestone-2` → `develop`. The 4 Java→Kotlin conversions + tests + `model/README.md` update.
+  - **PR #4 (docs):** https://github.com/josegbel/antenna-pod-kt/pull/4 — branch `docs/antennapod-model-kotlin-milestone-2-spec` → `develop`. `tasks/antennapod-model-kotlin-milestone-2.md` + `features/antennapod-model-kotlin-milestone-2.checkpoint.md` (this file).
 
 ## Decisions for next session
 - This is Milestone 2 of the `:model` `kotlin`-track case study. Milestone 1 (8 framework-free enums/POJOs) is merged into `develop` on `josegbel/antenna-pod-kt` via PR #1 (code) and PR #2 (spec docs).
