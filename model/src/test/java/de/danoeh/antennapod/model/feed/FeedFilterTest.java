@@ -6,7 +6,9 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class FeedFilterTest {
 
@@ -151,6 +153,64 @@ public class FeedFilterTest {
         assertTrue(filter.shouldAutoDownload(download));
         assertFalse(filter.shouldAutoDownload(doNotDownload));
         assertTrue(filter.shouldAutoDownload(download2));
+    }
+
+    @Test
+    public void testReferenceEqualityPin() {
+        FeedFilter filter1 = new FeedFilter("Hello", "", -1);
+        FeedFilter filter2 = new FeedFilter("Hello", "", -1);
+
+        // No equals()/hashCode() defined: two same-content instances must NOT be equal.
+        assertNotSame(filter1, filter2);
+        assertFalse(filter1.equals(filter2));
+    }
+
+    @Test
+    public void testNullIncludeFilterFieldEdgeCase() {
+        FeedFilter filter = new FeedFilter(null, "", -1);
+
+        // getIncludeFilter() null-checks defensively and returns an empty list.
+        assertTrue(filter.getIncludeFilter().isEmpty());
+        // hasIncludeFilter() has no null-check and throws on a null includeFilter,
+        // an existing inconsistency that must be preserved exactly, not "fixed".
+        try {
+            filter.hasIncludeFilter();
+            fail("Expected a NullPointerException");
+        } catch (NullPointerException expected) {
+            // expected
+        }
+    }
+
+    @Test
+    public void testShouldAutoDownloadThrowsOnNullIncludeFilter() {
+        FeedFilter filter = new FeedFilter(null, "", -1);
+        FeedItem item = new FeedItem();
+        item.setTitle("Hello world");
+
+        // shouldAutoDownload() has no null-check on includeFilter, matching the
+        // original unguarded Java's NullPointerException at the same call site.
+        try {
+            filter.shouldAutoDownload(item);
+            fail("Expected a NullPointerException");
+        } catch (NullPointerException expected) {
+            // expected
+        }
+    }
+
+    @Test
+    public void testShouldAutoDownloadThrowsOnNullExcludeFilter() {
+        FeedFilter filter = new FeedFilter("", null, -1);
+        FeedItem item = new FeedItem();
+        item.setTitle("Hello world");
+
+        // shouldAutoDownload() has no null-check on excludeFilter, matching the
+        // original unguarded Java's NullPointerException at the same call site.
+        try {
+            filter.shouldAutoDownload(item);
+            fail("Expected a NullPointerException");
+        } catch (NullPointerException expected) {
+            // expected
+        }
     }
 
 }
