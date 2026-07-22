@@ -4,7 +4,7 @@
 > **Task file:** `tasks/antennapod-model-kotlin-milestone-3.md`
 
 ## Status
-**Red-team implementation APPROVED (loop 1 of max 2) — ready for PR**
+**DONE — PRs opened (#6 code, #7 docs)**
 
 ## Last updated
 2026-07-22
@@ -17,7 +17,7 @@
 - [x] Implement (android-migration-developer) — all 7 Steps implemented exactly as planned, build green after every step, no deviations. See `## Implementation Notes` in the task file.
 - [x] Code review (migration-code-reviewer) — **loop 1: REQUEST CHANGES** (1 MAJOR, real ktlint `standard:enum-wrapping` failure), **loop 2: APPROVE.** Loop 2 independently re-verified the fix against live source (not self-report): read current `MediaType.kt`/`SortOrder.kt` line-by-line against `FeedOrder.kt`'s precedent, forced a non-cached `./gradlew :model:ktlintMainSourceSetCheck --rerun` (genuinely executed, not `UP-TO-DATE`, PASS), confirmed via `ls -laT` mtimes that only the two enum files were touched, re-ran targeted + full `:model:test` and `:app:assembleDebug` (all green), and cross-checked the fresh `MediaTypeTest` JUnit XML directly (8/8 pass). See `## Code Review Verdict` (loop 2 entry) in the task file.
 - [x] Red-team implementation (legacy-android-red-team) — **APPROVE (loop 1 of max 2).** No CRITICAL/MAJOR findings. Independently read all four `.kt` files against `git show HEAD`'s Java originals (not just code review's checklist), confirmed both named idiom traps (M2's `String.split()` trap, `serialVersionUID`/`Serializable` exposure) genuinely don't apply to this batch, sampled real downstream call sites for `SortOrder`/`MediaType` including a nested-enum Java cross-reference (`Feed.java:462` → `SortOrder.Scope.INTRA_FEED`), confirmed `isNullOrEmpty()` (not `isNullOrBlank()`) was used and its stdlib contract legitimately backs the smart-casts, confirmed `MediaMetadataRetrieverCompat.close()`'s override is a logic-for-logic match, and independently re-ran the full test suite myself (8/8 `MediaTypeTest`, 11/11 `SortOrderTest`, 14/14 `VolumeAdaptionSettingTest`, forced non-cached). One MINOR, non-blocking: the task file has repeated a stale "13 tests" count for `VolumeAdaptionSettingTest` since Research (actual count is 14) — zero equivalence impact, cosmetic only. See `## Red-Team Verdict — Implementation` in the task file.
-- [ ] PR opened
+- [x] PR opened — code: `josegbel/antenna-pod-kt` PR #6 (`kotlin/model-module-milestone-3` → `develop`), docs: PR #7 (`docs/antennapod-model-kotlin-milestone-3-spec` → `develop`), split to match the M2 PR #3/#4 precedent (code and spec-task artifacts kept as separate PRs).
 
 ## Decisions for next session
 - This is Milestone 3 of the `:model` `kotlin`-track case study. Milestone 1 (8 framework-free enums/POJOs) and Milestone 2 (`FeedFilter`, `DownloadResult`, `FeedItemFilter`, `Transcript`) are both merged into `develop` on `josegbel/antenna-pod-kt` (PRs #1–#4), plus a follow-up README clarification (PR #5).
