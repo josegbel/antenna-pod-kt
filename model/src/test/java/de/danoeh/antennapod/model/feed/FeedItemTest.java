@@ -3,12 +3,20 @@ package de.danoeh.antennapod.model.feed;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.text.SimpleDateFormat;
+import java.util.Collections;
 import java.util.Date;
 
 import static de.danoeh.antennapod.model.feed.FeedItemMother.anyFeedItemWithImage;
+import static de.danoeh.antennapod.model.feed.FeedMother.anyFeed;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 
 public class FeedItemTest {
 
@@ -134,5 +142,111 @@ public class FeedItemTest {
         item.setDescriptionIfLonger(description);
         item.setDescriptionIfLonger(contentEncoded);
         assertEquals(TEXT_LONG, item.getDescription());
+    }
+
+    @Test
+    public void equalsSameIdIsEqual() {
+        FeedItem a = anyFeedItemWithImage();
+        FeedItem b = anyFeedItemWithImage();
+        a.setId(1);
+        b.setId(1);
+        assertEquals(a, b);
+    }
+
+    @Test
+    public void equalsDifferentIdNotEqual() {
+        FeedItem a = anyFeedItemWithImage();
+        FeedItem b = anyFeedItemWithImage();
+        a.setId(1);
+        b.setId(2);
+        assertNotEquals(a, b);
+    }
+
+    @Test
+    public void hashCodeMatchesForSameId() {
+        FeedItem a = anyFeedItemWithImage();
+        FeedItem b = anyFeedItemWithImage();
+        a.setId(1);
+        b.setId(1);
+        assertEquals(a.hashCode(), b.hashCode());
+    }
+
+    @Test
+    public void getIdentifyingValuePrefersItemIdentifier() {
+        FeedItem item = createItem("item-identifier", "title", "http://example.com/link");
+        assertEquals("item-identifier", item.getIdentifyingValue());
+    }
+
+    @Test
+    public void getIdentifyingValueFallsBackToTitle() {
+        FeedItem item = createItem(null, "title", "http://example.com/link");
+        assertEquals("title", item.getIdentifyingValue());
+    }
+
+    @Test
+    public void getIdentifyingValueFallsBackToLink() {
+        FeedItem item = createItem(null, null, "http://example.com/link");
+        assertEquals("http://example.com/link", item.getIdentifyingValue());
+    }
+
+    @Test
+    public void getPubDateReturnsDefensiveCopy() {
+        FeedItem item = new FeedItem();
+        assertNull(item.getPubDate());
+
+        Date original = new Date(123456789L);
+        item.setPubDate(original);
+        Date returned = item.getPubDate();
+        returned.setTime(0L);
+
+        assertEquals(123456789L, item.getPubDate().getTime());
+    }
+
+    @Test
+    public void setPubDateStoresDefensiveCopy() {
+        FeedItem item = new FeedItem();
+        Date source = new Date(123456789L);
+        item.setPubDate(source);
+        source.setTime(0L);
+
+        assertEquals(123456789L, item.getPubDate().getTime());
+    }
+
+    @Test
+    public void serializationDropsTransientFeedAndChapters() throws Exception {
+        // media/transcript are intentionally left null: both are non-transient and media is typed
+        // FeedMedia (Tier C, implements Playable -> Parcelable), so populating it could drag an
+        // accidental Tier C dependency (and a possible NotSerializableException) into this bare-JVM
+        // Tier A test.
+        FeedItem item = new FeedItem();
+        item.setId(42);
+        item.setTitle("Serialize me");
+        item.setFeed(anyFeed());
+        item.setChapters(Collections.singletonList(new Chapter(0, "Chapter 1", null, null)));
+        Date pubDate = new Date(987654321L);
+        item.setPubDate(pubDate);
+
+        ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+        try (ObjectOutputStream out = new ObjectOutputStream(byteStream)) {
+            out.writeObject(item);
+        }
+        FeedItem deserialized;
+        try (ObjectInputStream in = new ObjectInputStream(new ByteArrayInputStream(byteStream.toByteArray()))) {
+            deserialized = (FeedItem) in.readObject();
+        }
+
+        assertEquals(42, deserialized.getId());
+        assertEquals("Serialize me", deserialized.getTitle());
+        assertNull(deserialized.getFeed());
+        assertNull(deserialized.getChapters());
+        // pubDate's backing field was renamed pubDate -> pubDateField during the Kotlin conversion
+        // (see the disclosure comment above FeedItem.kt's pubDateField); this assertion pins that the
+        // non-transient field still survives an intra-session ObjectOutputStream/ObjectInputStream
+        // round trip under its new name.
+        assertEquals(pubDate, deserialized.getPubDate());
+    }
+
+    private FeedItem createItem(String itemIdentifier, String title, String link) {
+        return new FeedItem(1, title, itemIdentifier, link, null, FeedItem.UNPLAYED, null);
     }
 }
