@@ -53,7 +53,7 @@ class FeedFilter(
         }
 
         // check using lowercase so the users don't have to worry about case.
-        val title = item.title.lowercase(Locale.getDefault())
+        val title = item.title?.lowercase(Locale.getDefault()) ?: ""
 
         // if it's explicitly excluded, it shouldn't be autodownloaded
         // even if it has include terms
