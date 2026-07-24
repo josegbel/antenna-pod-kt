@@ -20,9 +20,7 @@ class FeedItem : Serializable {
     var id: Long = 0
         set(value) {
             field = value
-            if (this.media != null) {
-                media!!.setItemId(value)
-            }
+            media?.setItemId(value)
         }
 
     /**
@@ -198,12 +196,13 @@ class FeedItem : Serializable {
             pubDateField = other.pubDateField
         }
         if (other.media != null) {
-            if (media == null) {
+            val currentMedia = media
+            if (currentMedia == null) {
                 media = other.media
                 // reset to new if feed item did link to a file before
                 setNew()
-            } else if (media!!.compareWithOther(other.media)) {
-                media!!.updateFromOther(other.media)
+            } else if (currentMedia.compareWithOther(other.media)) {
+                currentMedia.updateFromOther(other.media)
             }
         }
         if (other.paymentLink != null) {
@@ -235,14 +234,14 @@ class FeedItem : Serializable {
      * of the entry.
      */
     fun getIdentifyingValue(): String? {
-        return if (itemIdentifier != null && itemIdentifier!!.isNotEmpty()) {
-            itemIdentifier
-        } else if (title != null && title!!.isNotEmpty()) {
-            title
-        } else if (hasMedia() && media!!.getDownloadUrl() != null) {
-            media!!.getDownloadUrl()
-        } else {
-            link
+        val identifier = itemIdentifier
+        val itemTitle = title
+        val itemMedia = media
+        return when {
+            identifier != null && identifier.isNotEmpty() -> identifier
+            itemTitle != null && itemTitle.isNotEmpty() -> itemTitle
+            itemMedia != null && itemMedia.getDownloadUrl() != null -> itemMedia.getDownloadUrl()
+            else -> link
         }
     }
 
@@ -253,14 +252,16 @@ class FeedItem : Serializable {
     fun getLinkWithFallback(): String? {
         if (StringUtils.isNotBlank(link)) {
             return link
-        } else if (StringUtils.isNotBlank(feed!!.link)) {
-            return feed!!.link
+        }
+        val feedLink = feed?.link
+        if (StringUtils.isNotBlank(feedLink)) {
+            return feedLink
         }
         return null
     }
 
     fun getPubDate(): Date? {
-        return if (pubDateField != null) pubDateField!!.clone() as Date else null
+        return pubDateField?.clone() as Date?
     }
 
     fun setPubDate(pubDate: Date?) {
@@ -289,19 +290,16 @@ class FeedItem : Serializable {
         }
 
     val isInProgress: Boolean
-        get() = media != null && media!!.isInProgress()
+        get() = media?.isInProgress() == true
 
     /**
      * Updates this item's description property if the given argument is longer than the already stored description
      * @param newDescription The new item description, content:encoded, itunes:description, etc.
      */
     fun setDescriptionIfLonger(newDescription: String?) {
-        if (newDescription == null) {
-            return
-        }
-        if (this.description == null) {
-            this.description = newDescription
-        } else if (this.description!!.length < newDescription.length) {
+        if (newDescription == null) return
+        val currentDescription = this.description
+        if (currentDescription == null || currentDescription.length < newDescription.length) {
             this.description = newDescription
         }
     }
@@ -316,14 +314,14 @@ class FeedItem : Serializable {
      * which also considers embedded pictures or the feed picture if no other picture is present.
      */
     fun getImageLocation(): String? {
-        return if (imageUrl != null) {
-            imageUrl
-        } else if (media != null && media!!.hasEmbeddedPicture()) {
-            FeedMedia.FILENAME_PREFIX_EMBEDDED_COVER + media!!.getLocalFileUrl()
-        } else if (feed != null) {
-            feed!!.imageUrl
-        } else {
-            null
+        val itemMedia = media
+        val itemFeed = feed
+        return when {
+            imageUrl != null -> imageUrl
+            itemMedia != null && itemMedia.hasEmbeddedPicture() ->
+                FeedMedia.FILENAME_PREFIX_EMBEDDED_COVER + itemMedia.getLocalFileUrl()
+            itemFeed != null -> itemFeed.imageUrl
+            else -> null
         }
     }
 
@@ -332,7 +330,7 @@ class FeedItem : Serializable {
     }
 
     val isDownloaded: Boolean
-        get() = media != null && media!!.isDownloaded()
+        get() = media?.isDownloaded() == true
 
     /**
      * @return true if the item has this tag
@@ -368,9 +366,7 @@ class FeedItem : Serializable {
     }
 
     fun updateTranscriptPreferredFormat(typeStr: String?, url: String?) {
-        if (StringUtils.isEmpty(typeStr) || StringUtils.isEmpty(url)) {
-            return
-        }
+        if (StringUtils.isEmpty(typeStr) || StringUtils.isEmpty(url)) return
         val type = TranscriptType.fromMime(typeStr)
         val previousType = TranscriptType.fromMime(podcastIndexTranscriptType)
         if (type.priority > previousType.priority) {

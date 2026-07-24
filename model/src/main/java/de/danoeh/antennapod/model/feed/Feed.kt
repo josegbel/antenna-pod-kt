@@ -237,24 +237,22 @@ class Feed : Serializable {
      * of the feed.
      */
     fun getIdentifyingValue(): String? {
-        return if (feedIdentifier != null && feedIdentifier!!.isNotEmpty()) {
-            feedIdentifier
-        } else if (downloadUrl != null && downloadUrl!!.isNotEmpty()) {
-            downloadUrl
-        } else if (feedTitle != null && feedTitle!!.isNotEmpty()) {
-            feedTitle
-        } else {
-            link
+        val identifier = feedIdentifier
+        val url = downloadUrl
+        val title = feedTitle
+        return when {
+            identifier != null && identifier.isNotEmpty() -> identifier
+            url != null && url.isNotEmpty() -> url
+            title != null && title.isNotEmpty() -> title
+            else -> link
         }
     }
 
     fun getHumanReadableIdentifier(): String? {
-        return if (!StringUtils.isEmpty(customTitleValue)) {
-            customTitleValue
-        } else if (!StringUtils.isEmpty(feedTitle)) {
-            feedTitle
-        } else {
-            downloadUrl
+        return when {
+            !StringUtils.isEmpty(customTitleValue) -> customTitleValue
+            !StringUtils.isEmpty(feedTitle) -> feedTitle
+            else -> downloadUrl
         }
     }
 
@@ -298,11 +296,13 @@ class Feed : Serializable {
 
     fun getMostRecentItem(): FeedItem? {
         // we could sort, but we don't need to, a simple search is fine...
+        val currentItems = items ?: return null
         var mostRecentDate = Date(0)
         var mostRecentItem: FeedItem? = null
-        for (item in items!!) {
-            if (item.getPubDate() != null && item.getPubDate()!!.after(mostRecentDate)) {
-                mostRecentDate = item.getPubDate()!!
+        for (item in currentItems) {
+            val pubDate = item.getPubDate()
+            if (pubDate != null && pubDate.after(mostRecentDate)) {
+                mostRecentDate = pubDate
                 mostRecentItem = item
             }
         }
@@ -325,9 +325,7 @@ class Feed : Serializable {
 
     @Suppress("UNCHECKED_CAST")
     fun addPayment(funding: FeedFunding?) {
-        if (fundingList == null) {
-            fundingList = ArrayList()
-        }
+        if (fundingList == null) fundingList = ArrayList()
         // fundingList's declared element type stays FeedFunding (non-null) to preserve the public
         // getPaymentLinks(): ArrayList<FeedFunding>? API exactly; this cast mirrors the Java original's
         // ArrayList<FeedFunding>.add(null), which succeeds silently due to generic type erasure.
@@ -356,15 +354,13 @@ class Feed : Serializable {
             ) {
                 return true
             }
-            if (item.media != null && item.media!!.position > 0) {
-                return true
-            }
+            if ((item.media?.position ?: 0) > 0) return true
         }
         return false
     }
 
     fun isLocalFeed(): Boolean {
-        return downloadUrl!!.startsWith(PREFIX_LOCAL_FOLDER)
+        return downloadUrl?.startsWith(PREFIX_LOCAL_FOLDER) ?: false
     }
 
     fun getState(): Int {

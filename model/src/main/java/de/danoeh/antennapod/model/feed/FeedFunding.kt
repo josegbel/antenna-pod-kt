@@ -25,13 +25,11 @@ class FeedFunding(url: String?, content: String?) : Serializable {
         }
 
         val funding = other as FeedFunding
-        if (url == null && funding.url == null && content == null && funding.content == null) {
-            return true
+        return when {
+            url == null && funding.url == null && content == null && funding.content == null -> true
+            url != null && url == funding.url && content != null && content == funding.content -> true
+            else -> false
         }
-        if (url != null && url == funding.url && content != null && content == funding.content) {
-            return true
-        }
-        return false
     }
 
     override fun hashCode(): Int {
@@ -46,9 +44,7 @@ class FeedFunding(url: String?, content: String?) : Serializable {
 
         @JvmStatic
         fun extractPaymentLinks(payLinks: String?): ArrayList<FeedFunding>? {
-            if (StringUtils.isBlank(payLinks)) {
-                return null
-            }
+            if (StringUtils.isBlank(payLinks)) return null
             // old format before we started with PodcastIndex funding tag
             val funding = ArrayList<FeedFunding>()
             if (!payLinks!!.contains(FUNDING_ENTRIES_SEPARATOR) && !payLinks.contains(FUNDING_TITLE_SEPARATOR)) {
@@ -63,17 +59,13 @@ class FeedFunding(url: String?, content: String?) : Serializable {
             // existing test can catch a silent revert here for these whitespace separators (loop-2 MAJOR finding)
             // — this comment is the regression guard.
             val list = Pattern.compile(FUNDING_ENTRIES_SEPARATOR).split(payLinks)
-            if (list.isEmpty()) {
-                return null
-            }
+            if (list.isEmpty()) return null
 
             for (str in list) {
                 // Do not simplify to Kotlin's `.split(Regex)` / `CharSequence.split(vararg String)` — see the
                 // "do not simplify" note above (loop-1 CRITICAL / loop-2 MAJOR findings, same regression risk).
                 val linkContent = Pattern.compile(FUNDING_TITLE_SEPARATOR).split(str)
-                if (StringUtils.isBlank(linkContent[0])) {
-                    continue
-                }
+                if (StringUtils.isBlank(linkContent[0])) continue
                 val url = linkContent[0]
                 var title = ""
                 if (linkContent.size > 1 && !StringUtils.isBlank(linkContent[1])) {
@@ -87,9 +79,7 @@ class FeedFunding(url: String?, content: String?) : Serializable {
         @JvmStatic
         fun getPaymentLinksAsString(fundingList: ArrayList<FeedFunding>?): String? {
             val result = StringBuilder()
-            if (fundingList == null) {
-                return null
-            }
+            if (fundingList == null) return null
             for (fund in fundingList) {
                 result.append(fund.url).append(FUNDING_TITLE_SEPARATOR).append(fund.content)
                 result.append(FUNDING_ENTRIES_SEPARATOR)

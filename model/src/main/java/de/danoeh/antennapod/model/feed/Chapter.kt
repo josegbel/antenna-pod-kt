@@ -48,13 +48,9 @@ class Chapter {
     companion object {
         @JvmStatic
         fun getAfterPosition(chapters: List<Chapter>?, playbackPosition: Int): Int {
-            if (chapters == null || chapters.isEmpty()) {
-                return -1
-            }
+            if (chapters == null || chapters.isEmpty()) return -1
             for (i in chapters.indices) {
-                if (chapters[i].start > playbackPosition) {
-                    return i - 1
-                }
+                if (chapters[i].start > playbackPosition) return i - 1
             }
             return chapters.size - 1
         }
