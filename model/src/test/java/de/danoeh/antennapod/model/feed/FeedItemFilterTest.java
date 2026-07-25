@@ -8,6 +8,8 @@ import java.util.List;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 public class FeedItemFilterTest {
@@ -241,6 +243,30 @@ public class FeedItemFilterTest {
 
         assertTrue(filter.matches(inHistoryItem));
         assertFalse(filter.matches(notInHistoryItem));
+    }
+
+    // Regression guard for the disclosed lastPlayedTimeHistory!! shape (milestone 6): pins that
+    // a showInHistory filter still throws NullPointerException when media.lastPlayedTimeHistory
+    // is null, from inside FeedItemFilter.matches() itself - not silently swallowed by a future
+    // `?.` rewrite, which would let the item pass the filter instead of throwing. Mirrors
+    // EmbeddedChapterImageTest.getModelForNullChaptersThrowsNpe for the analogous chapters!!
+    // case. Confirmed unreachable in current production: PlaybackHistoryFragment.getFilter()
+    // (app/src/main/java/de/danoeh/antennapod/ui/screen/PlaybackHistoryFragment.java) returns
+    // FeedItemFilter.unfiltered(), not FILTER_HISTORY; FILTER_HISTORY is only ever used for the
+    // SQL-level DBReader path (FeedItemFilterQuery.generateFrom), which excludes null-timestamp
+    // rows at the query level and never reaches matches(); IS_IN_HISTORY has zero other
+    // production constructors repo-wide.
+    @Test
+    public void testMatchesShowInHistoryWithNullLastPlayedTimeHistoryThrowsNpe() {
+        FeedItem item = new FeedItem();
+        FeedMedia media = new FeedMedia(item, "http://example.com/a.mp3", 1, "audio/mp3");
+        item.setMedia(media);
+
+        FeedItemFilter filter = new FeedItemFilter(FeedItemFilter.IS_IN_HISTORY);
+
+        NullPointerException exception = assertThrows(NullPointerException.class, () -> filter.matches(item));
+
+        assertNull(exception.getMessage());
     }
 
     @Test

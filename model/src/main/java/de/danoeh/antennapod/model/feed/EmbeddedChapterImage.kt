@@ -47,7 +47,14 @@ class EmbeddedChapterImage(val media: Playable?, private val imageUrl: String) {
 
         @JvmStatic
         fun getModelFor(media: Playable, chapter: Int): Any {
-            val imageUrl = media.getChapters()[chapter].imageUrl
+            // media.chapters is now a Kotlin-nullable property (Playable.chapters: List<Chapter>?).
+            // A null chapters list still throws NullPointerException here (preserving the
+            // crash-on-null behavior a caller with an unguarded null would previously see from
+            // Playable.getChapters()), but the message regresses from a detailed JEP-358
+            // diagnostic to none - there is no Java platform-type boundary left downstream to
+            // launder the null through and recover it. Do not swallow this with `?.`, which
+            // would silently return null instead of throwing.
+            val imageUrl = media.chapters!![chapter].imageUrl
             return if (isEmbeddedChapterImage(imageUrl)) {
                 EmbeddedChapterImage(media, imageUrl!!)
             } else {

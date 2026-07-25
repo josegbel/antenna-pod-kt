@@ -103,7 +103,15 @@ class FeedItemFilter : Serializable {
             showNoMedia && item.hasMedia() -> return false
             showIsFavorite && !item.isTagged(FeedItem.TAG_FAVORITE) -> return false
             showNotFavorite && item.isTagged(FeedItem.TAG_FAVORITE) -> return false
-            showInHistory && item.media != null && item.media!!.getLastPlayedTimeHistory().time == 0L -> return false
+            // item.media.lastPlayedTimeHistory is now a Kotlin-nullable property
+            // (FeedMedia.lastPlayedTimeHistory: Date?). A null value still throws
+            // NullPointerException here (preserving the crash-on-null behavior the raw Date
+            // getter previously had), but the message regresses from a detailed JEP-358
+            // diagnostic to none - there is no Java platform-type boundary left downstream to
+            // launder the null through. Do not swallow this with `?.`, which would silently
+            // let the item pass this filter instead of throwing.
+            showInHistory && item.media != null &&
+                item.media!!.lastPlayedTimeHistory!!.time == 0L -> return false
         }
         if (item.feed != null) {
             val state = item.feed!!.getState()

@@ -20,7 +20,7 @@ class FeedItem : Serializable {
     var id: Long = 0
         set(value) {
             field = value
-            media?.setItemId(value)
+            media?.itemId = value
         }
 
     /**
@@ -47,8 +47,8 @@ class FeedItem : Serializable {
     var media: FeedMedia? = null
         set(value) {
             field = value
-            if (value != null && value.getItem() !== this) {
-                value.setItem(this)
+            if (value != null && value.item !== this) {
+                value.item = this
             }
         }
 
@@ -195,14 +195,15 @@ class FeedItem : Serializable {
         if (other.pubDateField != null && other.pubDateField != pubDateField) {
             pubDateField = other.pubDateField
         }
-        if (other.media != null) {
+        val otherMedia = other.media
+        if (otherMedia != null) {
             val currentMedia = media
             if (currentMedia == null) {
-                media = other.media
+                media = otherMedia
                 // reset to new if feed item did link to a file before
                 setNew()
-            } else if (currentMedia.compareWithOther(other.media)) {
-                currentMedia.updateFromOther(other.media)
+            } else if (currentMedia.compareWithOther(otherMedia)) {
+                currentMedia.updateFromOther(otherMedia)
             }
         }
         if (other.paymentLink != null) {
@@ -240,7 +241,7 @@ class FeedItem : Serializable {
         return when {
             identifier != null && identifier.isNotEmpty() -> identifier
             itemTitle != null && itemTitle.isNotEmpty() -> itemTitle
-            itemMedia != null && itemMedia.getDownloadUrl() != null -> itemMedia.getDownloadUrl()
+            itemMedia != null && itemMedia.downloadUrl != null -> itemMedia.downloadUrl
             else -> link
         }
     }
@@ -290,7 +291,7 @@ class FeedItem : Serializable {
         }
 
     val isInProgress: Boolean
-        get() = media?.isInProgress() == true
+        get() = media?.isInProgress == true
 
     /**
      * Updates this item's description property if the given argument is longer than the already stored description
@@ -319,7 +320,7 @@ class FeedItem : Serializable {
         return when {
             imageUrl != null -> imageUrl
             itemMedia != null && itemMedia.hasEmbeddedPicture() ->
-                FeedMedia.FILENAME_PREFIX_EMBEDDED_COVER + itemMedia.getLocalFileUrl()
+                FeedMedia.FILENAME_PREFIX_EMBEDDED_COVER + itemMedia.localFileUrl
             itemFeed != null -> itemFeed.imageUrl
             else -> null
         }
@@ -330,7 +331,7 @@ class FeedItem : Serializable {
     }
 
     val isDownloaded: Boolean
-        get() = media?.isDownloaded() == true
+        get() = media?.isDownloaded == true
 
     /**
      * @return true if the item has this tag
