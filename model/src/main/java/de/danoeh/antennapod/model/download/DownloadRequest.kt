@@ -42,10 +42,14 @@ class DownloadRequest(
         arguments, initiatedByUser
     )
 
-    private constructor(`in`: Parcel) : this(
-        `in`.readString()!!, `in`.readString()!!, `in`.readString(), `in`.readLong(), `in`.readInt(),
-        `in`.readString(), nullIfEmpty(`in`.readString()), nullIfEmpty(`in`.readString()), `in`.readByte() > 0,
-        `in`.readBundle()!!, `in`.readByte() > 0
+    // destination/source/arguments are asserted non-null here because writeToParcel() below always
+    // writes them as non-null (they're non-null String/Bundle properties above), so a Parcel
+    // produced by this class round-trips them back non-null; title is left nullable since it's
+    // genuinely optional (see the 9-arg convenience constructor's non-null-vs-nullable split).
+    private constructor(parcel: Parcel) : this(
+        parcel.readString()!!, parcel.readString()!!, parcel.readString(), parcel.readLong(), parcel.readInt(),
+        parcel.readString(), nullIfEmpty(parcel.readString()), nullIfEmpty(parcel.readString()),
+        parcel.readByte() > 0, parcel.readBundle()!!, parcel.readByte() > 0
     )
 
     override fun describeContents(): Int {
@@ -134,8 +138,8 @@ class DownloadRequest(
 
         @JvmField
         val CREATOR: Parcelable.Creator<DownloadRequest> = object : Parcelable.Creator<DownloadRequest> {
-            override fun createFromParcel(`in`: Parcel): DownloadRequest {
-                return DownloadRequest(`in`)
+            override fun createFromParcel(parcel: Parcel): DownloadRequest {
+                return DownloadRequest(parcel)
             }
 
             override fun newArray(size: Int): Array<DownloadRequest?> {

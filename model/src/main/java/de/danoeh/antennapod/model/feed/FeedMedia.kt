@@ -319,8 +319,8 @@ class FeedMedia(
         hasEmbeddedPictureField = hasEmbeddedPicture
     }
 
-    fun setDownloaded(downloaded: Boolean, `when`: Long) {
-        downloadDate = if (downloaded) `when` else 0
+    fun setDownloaded(downloaded: Boolean, whenDownloaded: Long) {
+        downloadDate = if (downloaded) whenDownloaded else 0
         val currentItem = item
         if (currentItem != null && downloaded && currentItem.isNew) {
             currentItem.isPlayed = false
@@ -391,13 +391,13 @@ class FeedMedia(
 
         @JvmField
         val CREATOR: Parcelable.Creator<FeedMedia> = object : Parcelable.Creator<FeedMedia> {
-            override fun createFromParcel(`in`: Parcel): FeedMedia {
-                val id = `in`.readLong()
-                val itemID = `in`.readLong()
+            override fun createFromParcel(parcel: Parcel): FeedMedia {
+                val id = parcel.readLong()
+                val itemID = parcel.readLong()
                 val result = FeedMedia(
-                    id, null, `in`.readInt(), `in`.readInt(), `in`.readLong(), `in`.readString(),
-                    `in`.readString(), `in`.readString(), `in`.readLong(), Date(`in`.readLong()),
-                    `in`.readInt(), `in`.readLong()
+                    id, null, parcel.readInt(), parcel.readInt(), parcel.readLong(), parcel.readString(),
+                    parcel.readString(), parcel.readString(), parcel.readLong(), Date(parcel.readLong()),
+                    parcel.readInt(), parcel.readLong()
                 )
                 result.itemId = itemID
                 return result

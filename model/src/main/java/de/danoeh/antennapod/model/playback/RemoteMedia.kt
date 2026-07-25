@@ -150,15 +150,16 @@ class RemoteMedia(
 
         @JvmField
         val CREATOR: Parcelable.Creator<RemoteMedia> = object : Parcelable.Creator<RemoteMedia> {
-            override fun createFromParcel(`in`: Parcel): RemoteMedia {
+            override fun createFromParcel(parcel: Parcel): RemoteMedia {
                 val result = RemoteMedia(
-                    `in`.readString(), `in`.readString(), `in`.readString(),
-                    `in`.readString(), `in`.readString(), `in`.readString(), `in`.readString(), `in`.readString(),
-                    `in`.readString(), `in`.readString(), Date(`in`.readLong()), `in`.readString()
+                    parcel.readString(), parcel.readString(), parcel.readString(),
+                    parcel.readString(), parcel.readString(), parcel.readString(), parcel.readString(),
+                    parcel.readString(), parcel.readString(), parcel.readString(), Date(parcel.readLong()),
+                    parcel.readString()
                 )
-                result.duration = `in`.readInt()
-                result.position = `in`.readInt()
-                result.lastPlayedTimeStatistics = `in`.readLong()
+                result.duration = parcel.readInt()
+                result.position = parcel.readInt()
+                result.lastPlayedTimeStatistics = parcel.readLong()
                 return result
             }
 
