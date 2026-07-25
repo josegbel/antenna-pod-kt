@@ -19,6 +19,30 @@
 
 Is the plan to contribute these Kotlin conversions back to AntennaPod upstream, or keep them as an internal case-study fork? This shapes how nullability should be introduced (upstream-bound would favor landing `@Nullable`/`@NonNull` in Java first, as a smaller reviewable PR, before converting to Kotlin) and has licensing/attribution/public-positioning implications per the portfolio README and root `CLAUDE.md`'s commercial-implications rule. Has not blocked any milestone so far because nullability has been resolved per-file each time regardless of the answer.
 
+### 3. `allWarningsAsErrors` for Kotlin test-compile tasks (cross-cutting build policy)
+**Raised:** 2026-07-25, during Milestone 7 planning.
+**Status:** Deferred — explicitly not folded into Milestone 7.
+
+Once `:model`'s last Java test file converts to Kotlin, `compileDebugUnitTestJavaWithJavac` goes `NO-SOURCE` and `common.gradle`'s repo-wide `-Xlint:all -Werror` (applied to all `JavaCompile` tasks) stops covering `:model`'s tests, while `ktlintTestDebugSourceSetCheck` starts covering them instead — different concerns (compiler warnings vs. formatting), not a like-for-like replacement. Adding a Kotlin-compile equivalent (`allWarningsAsErrors` on the Kotlin test-compile task) would be a `common.gradle` change affecting every module's test compilation, not a `:model`-scoped one.
+
+**Recommendation when picked up:** treat as a repo-wide build-policy decision, not a milestone of the kotlin-conversion sequence — needs its own scoping pass across all modules with Kotlin test sources, not just `:model`.
+
+### 4. Stale Robolectric comment in `model/build.gradle`
+**Raised:** 2026-07-25, during Milestone 7 planning.
+**Status:** Deferred — one-line fix, not worth widening File Scope for.
+
+The disclosure comment added in Milestone 6 says Robolectric is scoped to "this milestone's four files"; Milestone 7 research confirmed only **three** files (`DownloadRequestTest`, `FeedMediaTest`, `RemoteMediaTest`) actually use it — `EmbeddedChapterImageTest` uses `mockStatic(TextUtils)` instead. `model/README.md` already states the correct count; only the `build.gradle` comment is stale.
+
+**Recommendation when picked up:** trivial one-line fix, bundle into whichever future `:model` milestone next touches `model/build.gradle` for an unrelated reason.
+
+### 5. Orphaned checkstyle suppression entries naming test files
+**Raised:** 2026-07-25, Milestone 7 red-team loop 1.
+**Status:** Deferred — inert today, inert after; not worth widening File Scope to a repo-wide config file.
+
+`config/checkstyle/suppressions.xml:14` (`LineLength`) names `VolumeAdaptionSettingTest.java` and `:15` (`VariableDeclarationUsageDistance`) names `FeedFilterTest.java`. Neither has ever applied: `common.gradle`'s `checkstyle` task sources only `src/main/java` (+ `src/free/java`, `src/play/java`) and never `src/test`, for any module. Milestone 7's `.java` → `.kt` rename leaves both entries permanently orphaned, matching filenames that no longer exist. No gate changes in either direction.
+
+**Recommendation when picked up:** the same pattern will recur on **every** module test conversion, so handle it once, repo-wide, rather than per-milestone — and decide deliberately between deleting the dead entries and making them `.kt`-aware (a future checkstyle-scope change could make test suppressions live again). Editing these regex alternation groups is not risk-free: their other members are live production files, so a typo silently disables a real suppression.
+
 ## Resolved (kept for history)
 
 - **Tier B Robolectric-free precedent (José, 2026-07-21):** `:model` unit tests must stay bare-JVM, no Robolectric — motivated `EmbeddedChapterImage`/`SubscriptionsFilter`/`FeedPreferences` (Milestone 5) using stdlib swaps instead of framework shims. See [[kmp-portability-over-robolectric-shims]]. Applies as the default for `:model`, but **not** to Tier C (see below).
