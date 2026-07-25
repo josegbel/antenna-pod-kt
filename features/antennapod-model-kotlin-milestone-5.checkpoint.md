@@ -4,7 +4,7 @@
 > **Task file:** `tasks/antennapod-model-kotlin-milestone-5.md`
 
 ## Status
-**DONE — all lifecycle gates green. Ready for PR (branch/commit/push), pending explicit user go-ahead per hard rules.**
+**DONE — PR opened (single combined PR, code + spec-workflow docs, per José's choice this milestone).**
 
 ## Last updated
 2026-07-24
@@ -18,7 +18,7 @@
 - [x] Red-team implementation (legacy-android-red-team) — **Loop 1 of max 2, CHALLENGE, 2026-07-24** (see "Red-team implementation outcome" below)
 - [x] Fix-and-reverify pass (android-migration-developer) — 2026-07-24; addressed the MAJOR finding (see "Fix-and-reverify pass outcome" below)
 - [x] Red-team implementation, loop 2 of max 2, FINAL (legacy-android-red-team) — **APPROVE, 2026-07-24** (see "Red-team implementation outcome — Loop 2" below)
-- [ ] PR opened
+- [x] PR opened — **single combined PR** (code + spec-workflow docs together, per José's explicit choice this milestone — deviates from the M3/M4 split-PR precedent): https://github.com/josegbel/antenna-pod-kt/pull/10 — branch `kotlin/model-module-milestone-5` → `develop`
 - [ ] PR opened
 
 ## Decisions for next session
@@ -112,5 +112,11 @@
 - **No CRITICAL/MAJOR/MINOR findings remain. No escalation to José needed.**
 - Full verdict: `## Red-Team Verdict — Implementation` (Loop 2 of 2, FINAL entry) in `tasks/antennapod-model-kotlin-milestone-5.md`.
 
+## PR outcome (2026-07-24)
+- Ran the repo-wide pre-PR gate (`./gradlew checkstyle lint`) before opening — reproduced exactly the same two pre-existing, already-disclosed failures from Milestone 4 (`app-wearos/EpisodeDetailActivity.kt:115` compile break, `FeedInfoFragment.java:214` SpotBugs `NP_NULL_ON_SOME_PATH`), at the same line numbers, nothing new introduced by Milestone 5.
+- Branched `kotlin/model-module-milestone-5` off `develop`, staged and committed exactly the 12 expected files (3 conversions + 3 new tests + `model/README.md` + both spec-workflow docs), pushed to `origin` (`josegbel/antenna-pod-kt`), opened **PR #10**: https://github.com/josegbel/antenna-pod-kt/pull/10.
+- **José chose to combine code + spec-workflow docs into a single PR this milestone** (explicit decision, confirmed via AskUserQuestion before touching git) — deviates from the Milestone 3/4 precedent of splitting them into separate PRs.
+- No corresponding upstream issue exists for this portfolio case-study work (consistent with Milestones 1–4) — the "Closes: #xy" checklist item is left unchecked, matching PR #8's precedent.
+
 ## Resume command
-**All lifecycle gates are green — Milestone 5 is DONE pending PR.** `:model` is now 4 Java / 23 Kotlin. Next step (requires explicit user go-ahead per hard rules — never commit/push without it): create a feature branch (e.g. `kotlin/model-module-milestone-5`), commit the 3 conversions + 3 new test files + `model/README.md` update (commit message drafted in Implementation Notes), push to `origin` (`josegbel/antenna-pod-kt`), and open the PR using the Plan section as the description, following `.github/pull_request_template.md` and this repo's PR conventions (`Closes: #<number>` if applicable, 2-8 sentence description above the checklist). Per Milestone 3/4 precedent, spec-workflow docs (`tasks/antennapod-model-kotlin-milestone-5.md` + this checkpoint) are typically split into a separate follow-up docs PR — confirm with José whether to keep that split or combine this time.
+**Milestone 5 is DONE.** PR #10 (`kotlin/model-module-milestone-5` → `develop`) is open on `josegbel/antenna-pod-kt`, combining code and spec-workflow docs in one PR. `:model` is now 4 Java / 23 Kotlin. Next session starts Milestone 6 research — remaining tiers per this milestone's own research: **Tier C (`DownloadRequest`, `FeedMedia`, `RemoteMedia`, `Playable`)**, still blocked on the standing, unresolved Open Question for José about Parcelable characterization strategy (Robolectric vs. instrumented `androidTest` vs. verified-by-inspection) — this must be resolved before Tier C can be scoped into a milestone. No other Tier B/A work remains; Tier C is the only thing left in `:model`.
