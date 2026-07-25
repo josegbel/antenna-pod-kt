@@ -45,7 +45,7 @@ class FeedFilter(
 
         // Check if the episode is long enough if minimal duration filter is on
         if (hasMinimalDurationFilter() && item.media != null) {
-            val durationInMs = item.media!!.getDuration()
+            val durationInMs = item.media!!.duration
             // Minimal Duration is stored in seconds
             if (durationInMs > 0 && durationInMs / 1000 < minimalDuration) {
                 return false

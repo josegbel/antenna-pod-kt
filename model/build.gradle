@@ -21,4 +21,9 @@ dependencies {
     testImplementation libs.junit
     testImplementation libs.androidx.test.core
     testImplementation libs.mockito.core
+    // Disclosed, one-milestone exception to :model's Robolectric-free precedent (kotlin milestone 6):
+    // needed to exercise real android.os.Parcel/Bundle round-trips for the Tier C Parcelable cluster
+    // (DownloadRequest/FeedMedia/RemoteMedia) under plain JUnit. Do not broaden usage beyond Parcel
+    // characterization tests for this milestone's four files.
+    testImplementation libs.robolectric
 }

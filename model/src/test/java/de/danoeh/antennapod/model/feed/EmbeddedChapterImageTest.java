@@ -146,4 +146,24 @@ public class EmbeddedChapterImageTest {
         assertNotNull(exception.getMessage());
         assertTrue(exception.getStackTrace()[0].getClassName().startsWith("java.util.regex"));
     }
+
+    // Regression guard for the post-conversion chapters!! shape (milestone 6): pins that a null
+    // Playable.chapters still throws NullPointerException, from inside EmbeddedChapterImage
+    // itself (not swallowed by a future `?.` rewrite, and not laundered through a Java boundary
+    // that would produce a message again). Mirrors getModelForNullImageUrlThrowsFromInsideMatcherNotAtExtraction
+    // above for the analogous imageUrl case.
+    @Test
+    public void getModelForNullChaptersThrowsNpe() {
+        Playable media = mock(Playable.class);
+        when(media.getChapters()).thenReturn(null);
+
+        NullPointerException exception = assertThrows(NullPointerException.class,
+                () -> EmbeddedChapterImage.getModelFor(media, 0));
+
+        assertNull(exception.getMessage());
+        // Real throw site is EmbeddedChapterImage$Companion (the @JvmStatic bridge on the outer
+        // class delegates to the companion object's method body, where the !! check lives) -
+        // still "inside EmbeddedChapterImage", not laundered through any other class.
+        assertTrue(exception.getStackTrace()[0].getClassName().startsWith("de.danoeh.antennapod.model.feed.EmbeddedChapterImage"));
+    }
 }
