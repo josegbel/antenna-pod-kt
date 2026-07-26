@@ -27,6 +27,8 @@ Once `:model`'s last Java test file converts to Kotlin, `compileDebugUnitTestJav
 
 **Recommendation when picked up:** treat as a repo-wide build-policy decision, not a milestone of the kotlin-conversion sequence — needs its own scoping pass across all modules with Kotlin test sources, not just `:model`.
 
+**Update, 2026-07-26 (`:event` kotlin milestone, Milestone 8):** the same effect now also applies to `:event`. Its production `compileDebugJavaWithJavac` goes `NO-SOURCE` as of Step 6 (23/23 files converted to Kotlin); its test source set is deliberately kept Java (D10, equivalence-oracle rationale — see `tasks/antennapod-event-kotlin.md`), so `-Xlint:all -Werror` still covers `:event`'s tests today. The gap only appears once `:event`'s tests are themselves converted to Kotlin (tracked as OQ2 / a prospective Milestone 9), at which point this same repo-wide question applies to `:event` too.
+
 ### 4. Stale Robolectric comment in `model/build.gradle`
 **Raised:** 2026-07-25, during Milestone 7 planning.
 **Status:** Deferred — one-line fix, not worth widening File Scope for.
@@ -42,6 +44,8 @@ The disclosure comment added in Milestone 6 says Robolectric is scoped to "this 
 `config/checkstyle/suppressions.xml:14` (`LineLength`) names `VolumeAdaptionSettingTest.java` and `:15` (`VariableDeclarationUsageDistance`) names `FeedFilterTest.java`. Neither has ever applied: `common.gradle`'s `checkstyle` task sources only `src/main/java` (+ `src/free/java`, `src/play/java`) and never `src/test`, for any module. Milestone 7's `.java` → `.kt` rename leaves both entries permanently orphaned, matching filenames that no longer exist. No gate changes in either direction.
 
 **Recommendation when picked up:** the same pattern will recur on **every** module test conversion, so handle it once, repo-wide, rather than per-milestone — and decide deliberately between deleting the dead entries and making them `.kt`-aware (a future checkstyle-scope change could make test suppressions live again). Editing these regex alternation groups is not risk-free: their other members are live production files, so a typo silently disables a real suppression.
+
+**Update, 2026-07-26 (`:event` kotlin milestone, Milestone 8):** `config/checkstyle/suppressions.xml:16` (`WhitespaceAround`) names `SkipIntroEndingChangedEvent.java`, orphaned by that file's Step 4 conversion to `.kt` (`this.skipIntro= skipIntro;`, the line the suppression existed for, no longer exists). Same shape as the two `:model` entries above, same reasoning for leaving it alone (Plan Decision D20 in `tasks/antennapod-event-kotlin.md`) — one more data point for "handle once, repo-wide."
 
 ## Resolved (kept for history)
 
