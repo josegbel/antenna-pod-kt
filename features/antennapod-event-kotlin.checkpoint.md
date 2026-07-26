@@ -16,7 +16,7 @@
 - [x] Implement (android-migration-developer) — all 7 Steps done, 23/23 files converted, 94/94 characterization tests green before and after
 - [x] Code review (migration-code-reviewer) — **APPROVE, loop 2 of max 3.** Loop 1 REQUEST CHANGES (one MAJOR: an added comment in `EpisodeDownloadEvent.kt` violated the repo's no-added-comments rule; two non-blocking MINORs). Fixed and re-verified 94/94 green → loop 2 APPROVE.
 - [x] Red-team implementation (legacy-android-red-team) — **APPROVE, loop 2 of max 2 (final).** Loop 1 CHALLENGE (one MAJOR: D16 claimed the `SleepTimerUpdatedEvent` `Long.MIN_VALUE` overflow case was test-pinned; it wasn't). Fixed by adding one characterization test, re-verified 95/95 green → loop 2 APPROVE, no further findings.
-- [ ] PR opened
+- [x] PR opened — **single unified PR** (code + spec docs together): https://github.com/josegbel/antenna-pod-kt/pull/14 (branch `antennapod-event-kotlin` → `develop`).
 
 ## Decisions for next session
 - Module: `:event` (`de.danoeh.antennapod.event`). Track: `kotlin` only, chosen as the next case-study module after `:model`'s kotlin track closed out (Milestones 1–7, PR #13 merged 2026-07-25). Selected for the same reasons `:model` was picked first: 23 plain Java POJOs per `event/README.md`, used app-wide via GreenRobot EventBus `@Subscribe`, minimal framework coupling.
@@ -30,4 +30,4 @@
 - Final test count: 95 (94 from implementation + 1 `Long.MIN_VALUE` edge case added during implementation red-team loop 1).
 
 ## Resume command
-Milestone 8 is DONE — all lifecycle gates green. Next: create branch, commit, push, open the unified PR (code + spec docs together) using the Plan section as the PR description per `.github/pull_request_template.md`.
+Milestone 8 is DONE. PR #14 opened. Nothing further to do for this milestone. Candidate follow-ups (not started): the AC10 SpotBugs null-guard fix for the 4 consumer files (own task, out of File Scope), OQ2's Milestone 9 (convert `:event`'s test suite to Kotlin, gated on this PR merging first, mirroring `:model`'s M1–M6 → M7 sequencing), and OQ1 (standing, non-blocking upstreaming question).
