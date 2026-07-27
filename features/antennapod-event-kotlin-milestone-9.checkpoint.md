@@ -4,7 +4,7 @@
 > **Task file:** `tasks/antennapod-event-kotlin-milestone-9.md`
 
 ## Status
-**IMPLEMENTED — 19/22 test files converted to Kotlin, 95 tests green, 4 tiered commits on branch. Ready for code review.**
+**RED-TEAM IMPLEMENTATION APPROVED — 19/22 test files converted to Kotlin, 95 tests green, 5 commits on branch. Ready to open PR.**
 
 ## Last updated
 2026-07-27
@@ -14,8 +14,8 @@
 - [x] Plan (legacy-android-planner)
 - [x] Red-team plan (legacy-android-red-team) — Loop 1: CHALLENGE (1 MAJOR + 2 MINOR), all addressed by planner revision. **Loop 2 (final): APPROVE.** All three loop-1 findings independently re-verified against live source (not just trusted from the revision note); one cosmetic wording nit noted, non-blocking, no third loop.
 - [x] Implement (android-migration-developer) — 2026-07-27. 19/22 files converted across 4 risk-tiered commits (Tier A 13 files, Tier B 3 files, Tier C 2 files, Tier D 1 file) plus a docs commit for Step 7. 3 files kept Java, byte-for-byte unchanged (`git diff` against merge-base confirmed empty at every step). 95 tests green before and after every step. D10 assertion-content diff empty for 17/19 files; 2 files (`QueueEventTest`, `EventIdentityEqualityTest`) carry disclosed, individually-justified pure-syntax residuals. One disclosed deviation: `BufferUpdateEventTest` needed an explicit `import java.lang.Float` (kotlin.Float has no callable `isNaN(x)` static form; D9 forbade the idiomatic `.isNaN()` rewrite). `javap -p` re-proof of the `@JvmField`/`@JvmStatic` contract matches all required shapes. Full Implementation Notes in the task file.
-- [ ] Code review (migration-code-reviewer)
-- [ ] Red-team implementation (legacy-android-red-team)
+- [x] Code review (migration-code-reviewer) — 2026-07-27, Loop 1 of max 3: **APPROVE, zero findings.** Every check independently reproduced from scratch (not trusted from Implementation Notes): AC8's D10 diff re-derived with a rebuilt extractor (17/19 empty, 2 disclosed residuals match exactly); AC5 kept-Java-group diff reproduced empty; all named hard-stops (`Integer.toHexString`, `.equals()`, bare `0`, `Arrays.asList`) grepped directly; the `import java.lang.Float` deviation checked for necessity/scope/no-added-comment; `testDebugUnitTest --rerun` (95/0/0/0), `ktlintCheck`, `:event:lintDebug`, `:app:assembleDebug`, and `javap -p` re-proof of AC12 all re-run locally and green; `checkstyle lint`'s 3 failures independently confirmed pre-existing by checking out the merge-base and re-running. Full verdict in the task file's `## Code Review Verdict` section.
+- [x] Red-team implementation (legacy-android-red-team) — 2026-07-27, Loop 1 of max 2: **APPROVE, zero findings.** Adversarial pass against behavioral-equivalence risk specifically, independent of the code reviewer's clean pass. Rebuilt the D10 extractor from scratch (17/19 files empty, 2 match disclosed residuals exactly); confirmed the 3 kept-Java files byte-identical via both `diff` and `md5`; confirmed the D2/D3 "duplicated elsewhere" claim empirically against the actual built/tested Kotlin files, not just the plan-time table. Went beyond both prior gates by decompiling the four highest-risk equivalence claims to bytecode (`javap -c`): `Float.isNaN`/`Float.NaN` (identical `java/lang/Float` static calls), enum `.ordinal`/array `.size` (identical `invokevirtual`/`arraylength`, zero wrapping), `.equals()` (confirmed genuine `Object.equals`, not `Intrinsics.areEqual`/`==`), `assertNotEquals` boxing (confirmed `Integer.valueOf` + `Object,Object` overload), and `FeedListUpdateEvent(0)` (confirmed `invokespecial ...(J)V`, the `Long` constructor). No drift found anywhere. Full verdict in the task file's `## Red-Team Verdict — Implementation` section.
 - [ ] PR opened
 
 ## Decisions for next session
@@ -48,5 +48,13 @@ All three findings addressed in the Plan's revision note. **No Decision, Step, F
 
 No third loop needed — the one residual item is cosmetic and doesn't touch any Decision/Step/AC. Full verdict: `## Red-Team Verdict — Plan` (Loop 2, FINAL) in the task file.
 
+## Red-team implementation resolution (legacy-android-red-team, 2026-07-27)
+**APPROVE, zero findings.** Adversarial pass against behavioral-equivalence risk on the completed implementation (branch `antennapod-event-kotlin-milestone-9`, 5 commits, merge-base `46f8b3a58`), independent of the code reviewer's clean pass:
+- Rebuilt the D10 assertion-content extractor from scratch and ran it against all 19 converted files: 17/19 empty, 2 match the developer's disclosed residuals exactly (`QueueEventTest`, `EventIdentityEqualityTest`).
+- Confirmed the 3 kept-Java files byte-identical via both `git diff` (empty) and `md5` on `git show` output at both endpoints.
+- Confirmed the D2/D3 "duplicated elsewhere" claim empirically by reading the actual built/tested Kotlin duplicate files, not just re-trusting the plan-time table.
+- Went beyond both prior gates: decompiled the four claims most likely to hide silent semantic drift, via `javap -c` against the compiled test classes — `Float.isNaN`/`Float.NaN` (bytecode-identical `java/lang/Float` static calls), enum `.ordinal`/array `.size` (bytecode-identical `invokevirtual`/`arraylength`), `.equals()` (confirmed genuine `Object.equals`, not `Intrinsics.areEqual`), `assertNotEquals` boxing (confirmed `Integer.valueOf` + `Object,Object` overload), and `FeedListUpdateEvent(0)` (confirmed `invokespecial ...(J)V`, the `Long` ctor). All five hold up at the bytecode level, not just "tests still pass."
+- No CRITICAL/MAJOR/MINOR findings. Full verdict: `## Red-Team Verdict — Implementation` in the task file.
+
 ## Resume command
-**Cleared for implementation.** Invoke `android-migration-developer` on `tasks/antennapod-event-kotlin-milestone-9.md` — Steps 1–7, File Scope, and AC1–AC18 are final. Standing instruction: run autonomously and ship as a single unified PR (code + spec docs together), per the M7/M8 precedent. After implementation: `migration-code-reviewer` (max 3 loops), then `legacy-android-red-team` again for the Implementation-mode review (separate from the Plan-mode review just completed).
+**Cleared for PR.** Both red-team loops (Plan and Implementation) and code review are APPROVE with zero blocking findings. Open a PR from `antennapod-event-kotlin-milestone-9` against `develop` per `.github/pull_request_template.md`, using the Plan section as the description per the standing instruction (code + spec docs together, single unified PR, matching M7/M8 precedent). No further pipeline stages remain for this milestone.
