@@ -4,7 +4,7 @@
 > **Task file:** `tasks/antennapod-net-download-service-interface-kotlin.md`
 
 ## Status
-**LIFECYCLE COMPLETE — preparing commit/PR**
+**DONE — PR opened, awaiting human review/merge**
 
 ## Last updated
 2026-07-28
@@ -16,7 +16,7 @@
 - [x] Implement (android-migration-developer) — all 9 Steps done. 7/7 files converted, 13/13 `!!` inventory matched exactly, 54 tests/flavor all green before and after every step, full-repo build green, zero out-of-scope edits. Loop-1 code-review fixes (missing future-work item #6, D9 rename note) applied and re-verified 54/54 green. See Implementation Notes in the task file.
 - [x] Code review (migration-code-reviewer) — loop 1 REQUEST CHANGES (2 findings: missing future-work item #6, missing D9 rename note); both fixed. **Loop 2: APPROVE.** One non-blocking MINOR (checkpoint-note phrasing) fixed directly.
 - [x] Red-team implementation (legacy-android-red-team) — **APPROVE, loop 1 of max 2.** No CRITICAL/MAJOR findings; independently re-ran the AC4a falsification check (third independent pass), re-ran both flavor suites fresh (54/54), hand-traced all 13 `!!` occurrences against D8's table, force-recompiled `:net:download:service` to confirm the Java subclasses still compile unedited. Cleared for PR.
-- [ ] PR opened
+- [x] PR opened — https://github.com/josegbel/antenna-pod-kt/pull/16 (branch `kotlin/net-download-service-interface` → `develop`).
 
 ## Decisions for next session
 - Module: `:net:download:service-interface`. Track: `kotlin` only. Selected as the next portfolio case-study module after `:event`'s kotlin track closed out (Milestones 8–9, PR #14 merged, PR #15 open) — chosen to showcase the service-interface/service split pattern called out in this repo's `AGENTS.md`, distinct from `:model` (data classes) and `:event` (EventBus POJOs).
@@ -29,4 +29,4 @@
 - **Pre-PR `./gradlew checkstyle lint` gate (2026-07-28):** run failed with 3 pre-existing, unrelated issues — `:app-wearos:compileFreeDebugKotlin`/`compilePlayDebugKotlin` (`EpisodeDetailActivity.kt:115:28`, a known carry-over from an earlier `:model` milestone) and `:app:spotbugsPlayDebug` (7 violations: 2× `MainActivity`, 1× `FeedInfoFragment`, 1× `OnlineFeedViewActivity`, 1× `PreferenceActivity`, 2× `QueueFragment` — the same class the `:event` milestone (PR #14) disclosed, plus one additional `FeedInfoFragment`/`FeedFunding` finding not previously itemized). Verified directly (not taken on any agent's word) by checking out unmodified `develop` and re-running the identical failing tasks: byte-identical failures, same line numbers, same violation set. Confirmed unrelated to this module's diff. No fix attempted per this repo's convention of not fixing pre-existing issues found incidentally (matching `:model` D9/D20 and `:event` AC10 precedent).
 
 ## Resume command
-Milestone 10 lifecycle complete (research → plan → red-team → implement → code review → red-team implementation, all APPROVE). Pre-PR checkstyle/lint gate run and pre-existing failures verified unrelated. Next: commit, push, open PR.
+Milestone 10 is DONE. PR #16 opened, awaiting José's review/merge. Nothing further to do for this milestone.
