@@ -29,6 +29,8 @@ Once `:model`'s last Java test file converts to Kotlin, `compileDebugUnitTestJav
 
 **Update, 2026-07-26 (`:event` kotlin milestone, Milestone 8):** the same effect now also applies to `:event`. Its production `compileDebugJavaWithJavac` goes `NO-SOURCE` as of Step 6 (23/23 files converted to Kotlin); its test source set is deliberately kept Java (D10, equivalence-oracle rationale — see `tasks/antennapod-event-kotlin.md`), so `-Xlint:all -Werror` still covers `:event`'s tests today. The gap only appears once `:event`'s tests are themselves converted to Kotlin (tracked as OQ2 / a prospective Milestone 9), at which point this same repo-wide question applies to `:event` too.
 
+**Update, 2026-07-27 (`:event` kotlin milestone, Milestone 9):** 19 of `:event`'s 22 test files converted to Kotlin; `compileDebugUnitTestKotlin` now covers those. The gap is narrower here than on `:model`, though, not equal to it: 3 files (`PublicFieldInteropTest.java`, `MessageEventTest.java`, `FeedItemEventTest.java`) stay Java by design (see `event/README.md`'s intentionally-mixed-source-set convention), so `compileDebugUnitTestJavaWithJavac` keeps running and `-Xlint:all -Werror` keeps covering those three files' Kotlin-test-compile-uncovered surface. Only the 19 converted files fall into the same warnings-are-warnings-not-errors gap already described above for `:model` and for `:event`'s production code.
+
 ### 4. Stale Robolectric comment in `model/build.gradle`
 **Raised:** 2026-07-25, during Milestone 7 planning.
 **Status:** Deferred — one-line fix, not worth widening File Scope for.
