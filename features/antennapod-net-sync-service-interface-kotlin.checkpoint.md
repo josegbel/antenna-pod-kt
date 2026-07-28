@@ -4,7 +4,7 @@
 > **Task file:** `tasks/antennapod-net-sync-service-interface-kotlin.md`
 
 ## Status
-IN PROGRESS — implementation underway on branch `kotlin/net-sync-service-interface` (off `develop`, which now includes Milestone 10's merged PR #16). Step 1 complete and committed.
+IMPLEMENTATION COMPLETE — all 13 Steps done on branch `kotlin/net-sync-service-interface` (12 commits: Steps 1, 2+3 combined, 4, 5, 6, 7, 8, 9, 10, 11, 12, and this docs commit for Step 13). Module is 9/9 Kotlin. 83/83 characterization tests green before and after every conversion step, zero test-file edits. Full verification matrix run (see task file Implementation Notes). Ready for `migration-code-reviewer`.
 
 ## Last updated
 2026-07-28
@@ -13,7 +13,7 @@ IN PROGRESS — implementation underway on branch `kotlin/net-sync-service-inter
 - [x] Research (legacy-android-researcher)
 - [x] Plan (legacy-android-planner)
 - [x] Red-team plan (legacy-android-red-team) — loop 1 CHALLENGE → planner revision → loop 2 APPROVE, see task file
-- [ ] Implement (android-migration-developer) — in progress, see task file Implementation Notes
+- [x] Implement (android-migration-developer) — all 13 Steps complete, see task file Implementation Notes
 - [ ] Code review (migration-code-reviewer)
 - [ ] Red-team implementation (legacy-android-red-team)
 - [ ] PR opened
@@ -66,7 +66,35 @@ Loop 1 CHALLENGE found: (1) CRITICAL — the PLAY-gate test pair discriminated `
 - **Interop width:** 7 dependent Gradle modules (2 more than M10), 28 referencing files, **all Java, zero Kotlin callers**. 22 `getInstance()` sites + 5 `setInstance()` sites (4 of them tests in *other* modules that install `SynchronizationQueueStub`).
 
 ## Resume command
-Research, Plan, and plan red-team (both loops) are complete in `tasks/antennapod-net-sync-service-interface-kotlin.md` (Plan = D0–D17, 13 Steps, File Scope of 5 modified + 9 renamed + 9 created files, AC1–AC18, plus OQ1–OQ3; Plan Revision 1 closed loop 1's findings; loop 2 = APPROVE). **Next: invoke `android-migration-developer` for Steps 1–13.** After implementation: `migration-code-reviewer`, then `legacy-android-red-team` again for the implementation pass (fresh 2-loop budget, separate from the plan-review loops already used).
+Research, Plan, and plan red-team (both loops) are complete in `tasks/antennapod-net-sync-service-interface-kotlin.md` (Plan = D0–D17, 13 Steps, File Scope of 5 modified + 9 renamed + 9 created files, AC1–AC18, plus OQ1–OQ3; Plan Revision 1 closed loop 1's findings; loop 2 = APPROVE). Implementation is **done** — see below. **Next: invoke `migration-code-reviewer`**, then `legacy-android-red-team` again for the implementation pass (fresh 2-loop budget, separate from the plan-review loops already used).
+
+### Implementation summary (2026-07-28) — what the code reviewer / implementation red-team should look at
+
+All 13 Steps complete, 12 commits on `kotlin/net-sync-service-interface`. Full detail (per-file test
+results, machine-checked `javap`/grep claims, falsification-check outcomes, the Step 2 spike
+result, the AC16 cross-module matrix, and three recorded implementation-level deviations) is in
+the task file's **Implementation Notes** section — read that first rather than re-deriving from
+the diff.
+
+Headline points worth a second pair of eyes, since they're the highest-consequence claims:
+- **`fromIdentifier(null) == null` was proven, not assumed** — `SynchronizationProviderTest` was
+  green and unmodified for nine steps before `SynchronizationProvider.kt` landed at Step 10, and
+  stayed green immediately after.
+- **All three `!!` in `EpisodeAction.kt` were falsification-tested live**, not just reasoned about:
+  each was individually softened to `?.`, confirmed the *matching* test failed and no other test
+  did, then reverted. Same live-falsification treatment for all three PLAY-gate boundary tests
+  against the exact mistranscriptions the red-team's loop-1 CRITICAL finding was about.
+- **The `EpisodeAction.equals` defect is pinned exactly as D10 specified** — verify the diff did
+  not "fix" `action != that.action` anywhere; it should still read `!=`, not `==`.
+- **One deviation worth checking:** an unauthorized rename (`equals(other: Any?)`) was caught and
+  reverted to Java's exact `o` *before* being committed — confirm the committed diff shows `o`,
+  not `other`, since this is exactly the kind of thing a fresh read should re-verify rather than
+  trust the developer's own account of having caught it.
+- **Pre-existing test/gate noise, not this milestone's regressions** — `:net:download:service:test`
+  (6 `LocalFeedUpdaterTest` failures), `:app:test` (23 failures, a local Mockito/JDK toolchain
+  issue), `:app-wearos` compile failure, and `:app:spotbugsPlayDebug`'s 7 violations were all
+  verified byte-for-byte identical against unmodified `develop` — a reviewer re-running these
+  should see the same counts, not zero failures.
 
 Items the plan review already checked in depth, so the code reviewer / implementation red-team pass doesn't need to re-litigate them unless the diff itself looks wrong:
 1. **D9's `!!` inventory and its "Pinned by" column** — verified rows 1/2 (`item.feed!!`/`item.media!!`, same expression sequence at `EpisodeAction.java:242`) have fixtures that genuinely discriminate `!!` from `?.` given Java's left-to-right argument evaluation, and row 3 is not shadowed by rows 1/2. Still worth a live falsification run (soften each `!!`, confirm the right test fails, revert) once code exists — AC4 mandates this.

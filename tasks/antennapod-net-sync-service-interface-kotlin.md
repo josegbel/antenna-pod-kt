@@ -747,7 +747,201 @@ Both substantive Loop 1 findings trace to the same root cause — a rule (Rule N
 ---
 
 ## Implementation Notes
-_Not yet started._
+_By: android-migration-developer | 2026-07-28_
+
+### Commit message
+
+```
+feat(net-sync-service-interface): kotlin migration — convert all 9 production files, preserve 28-call-site Java API, three latent NPEs and the pinned equals defect
+
+kotlin track, Milestone 11. Converts every production file in
+:net:sync:service-interface to Kotlin behind a nine-file, one-per-
+production-file Java characterization suite written first (83 tests,
+zero pre-existing tests before this milestone — the module's first
+test source set). Preserves the module's public API exactly across
+28 referencing Java files in seven consuming modules: the abstract
+static-singleton facade (SynchronizationQueue), its no-op stub, a
+pure interface with checked exceptions crossing into two Java
+implementors (ISyncService), a checked exception subclassed twice
+(SyncServiceException), a JVM-field-shaped abstract response class
+subclassed three times (UploadChangesResponse), two DTOs, an enum
+with a static lookup that is the module's headline silent-regression
+hazard (SynchronizationProvider.fromIdentifier), and the module's
+biggest risk surface — EpisodeAction's dual gpodder.net-wire /
+on-disk-SharedPreferences JSON contract, its builder, and its
+pre-existing (and deliberately unrepaired) equals defect.
+
+Three !! in the whole module, each with a fixture proven to
+discriminate it from a softened ?. Zero consumer files edited.
+```
+
+### Branch and starting state
+
+Branch `kotlin/net-sync-service-interface`, checked out off local `develop` after fast-forwarding
+it to `origin/develop` — Milestone 10's PR #16 had merged upstream between plan approval and the
+start of this implementation session (`78734ff57`), so `develop` now includes the
+`:net:download:service-interface` conversion. No File Scope overlap with this milestone.
+
+### Test commands run
+
+Per D15, this module is unflavoured (no `playFlavor.gradle`), so the real task names are:
+- `./gradlew --console=plain :net:sync:service-interface:testDebugUnitTest --rerun`
+- `./gradlew --console=plain :net:sync:service-interface:testReleaseUnitTest --rerun`
+- Aggregate: `./gradlew :net:sync:service-interface:test`
+
+Confirmed directly via `./gradlew :net:sync:service-interface:tasks --all` at Step 1 (no
+`testFreeDebugUnitTest`/`testPlayDebugUnitTest` exist for this module — do not copy Milestone 10's
+flavoured names). Both variants run with `--rerun` after every step; both green with an identical
+83/83 test count after every step from Step 5 onward (before Step 5, the count grows as each
+characterization commit lands: 9 after Step 1, 37 after Step 3, 62 after Step 4, 83 from Step 5
+through Step 12).
+
+Also run at each conversion step: `./gradlew :app:assembleDebug` (green after every step, zero
+edits outside `net/sync/service-interface/`), plus the specific consuming module's test suite for
+whichever step touched its dependency (`:net:sync:gpoddernet:test` at Steps 6–9 and 12,
+`:net:sync:service:test` at Steps 9, 10, 12, `:net:download:service:test` and
+`:storage:database:test` at Step 11 and again at Step 13, `:ui:preferences:testPlayDebugUnitTest`
+at Step 10, `:app:test` at Step 13). `./gradlew :net:sync:service-interface:ktlintCheck` run and
+green from Step 6 onward (after fixing trailing-comma and enum-formatting violations along the
+way — see Deviations). `./gradlew :net:sync:service-interface:spotbugsDebug` clean throughout,
+confirmed clean again at Step 13. `./gradlew checkstyle lint` run repo-wide at Step 13 (see below).
+
+### Characterization test results
+
+All 83 tests across all nine test files, green **before** (Steps 1–5, against unconverted Java)
+and **after** (Steps 6–12, against converted Kotlin, then again at Step 13's final matrix), with
+**zero test-file edits** at any point in Steps 6–12 (`git diff --stat <step-5 commit>.. --
+net/sync/service-interface/src/test/` is empty for every intermediate commit through Step 12).
+
+| File | Tests | Before | After | What it actually exercises |
+|---|---|---|---|---|
+| `SynchronizationProviderTest.java` | 9 | PASS | PASS | `fromIdentifier(null) == null` — the module's headline silent-regression guard, verified still green immediately after `SynchronizationProvider.kt` landed at Step 10; exact-match lookups, case sensitivity, both persisted `getIdentifier()` strings, `values()` declaration order. |
+| `EpisodeActionJsonTest.java` | 28 | PASS | PASS | The full `readFromJsonObject`/`writeToJsonObject` wire-and-disk contract: mandatory-field guard (missing vs. empty), swallowed `IllegalArgumentException`/`ParseException`, case-insensitive action parsing, UTC exact-epoch-millis parse/format, `putOpt` vs `put` null omission, and — the red-team loop-1 CRITICAL fix — all **three** independent PLAY-gate boundary tests (`...WhenPositionIsZero`, `...WhenTotalIsZero`, `...AcceptStartedZero`), each verified by falsification (see below) to fail if and only if its own clause's operator is mistranscribed. |
+| `EpisodeActionCharacterizationTest.java` | 25 | PASS | PASS | `Builder(FeedItem, Action)` — the only constructor production uses, exercised by nothing until this milestone — including both `!!` rows (verified fully discriminating by falsification) and the red-team loop-1 MAJOR fix (`builderFeedItemConstructorAcceptsNullAction`, the only test that would catch a non-null `action` declaration on this specific overload). The known `equals`/`hashCode` defect, pinned as-is: field-identical instances compare unequal, action-only-differing instances compare equal with different hash codes. Exact `toString()` golden strings for both a populated and an all-null instance. |
+| `SynchronizationQueueTest.java` | 3 | PASS | PASS | Static holder set/get identity (`assertSame`, not just equality), the `setInstance(null)` honest stand-in for the unobservable pristine default, and `stubAcceptsNullArgumentsWithoutThrowing` — the guard on D7(c)'s nullable-parameter decision, verified still true after `SynchronizationQueueStub.kt` moved together with its abstract class at Step 11. |
+| `SyncServiceExceptionTest.java` | 7 | PASS | PASS | Message/cause round-trips including `Exception(Throwable)`'s message-becomes-cause's-toString behavior, checked-not-runtime (via `isAssignableFrom`, not `instanceof` — see Deviations), and the two D6 machine checks: `serialVersionUID`'s exact reflection-visible modifiers (private/static/final) and value. The nested subclass calling both `super(...)` forms is a compile-time guard for `open`. |
+| `ISyncServiceTest.java` | 4 | PASS | PASS | A nested Java implementation of all six methods, invoked and caught through the interface type — a compile-time guard for `@Throws` on every method, not just a runtime check. |
+| `UploadChangesResponseTest.java` | 3 | PASS | PASS | A nested Java subclass reading the inherited `timestamp` field **unqualified** (compile-time guard for `@JvmField`) plus a reflection check that no `getTimestamp()` accessor exists. |
+| `SubscriptionChangesTest.java` | 2 | PASS | PASS | Constructor-to-getter round-trip and the exact misleading `toString()` format (singular "Change"). |
+| `EpisodeActionChangesTest.java` | 2 | PASS | PASS | Constructor-to-getter round-trip and the exact misleading `toString()` format (name doesn't match the class). |
+
+**Falsification checks actually run** (AC3, AC4 — not just asserted as satisfied):
+- Softened `item.media!!` → `item.media?.` in `EpisodeAction.kt`: confirmed
+  `builderFeedItemConstructorWithNullMediaThrowsNullPointerException` fails and
+  `...WithNullFeedThrowsNullPointerException` stays green; reverted. Repeated for `item.feed!!`
+  against the sibling test with the same result in the other direction; reverted.
+- Flipped the PLAY-gate predicate to `total >= 0`: confirmed only
+  `readFromJsonObjectPlayFieldsAllOrNothingWhenTotalIsZero` fails, the other two boundary tests
+  stay green; reverted. Repeated for `position >= 0` against `...WhenPositionIsZero` and
+  `started > 0` against `...AcceptStartedZero`, same clean one-to-one result each time; reverted.
+
+### Machine-checked interop claims (AC12/AC13), verbatim
+
+- `javap -p -s` on `UploadChangesResponse`: `public final long timestamp` field present, no
+  `getTimestamp()`.
+- `javap -c` on `ISyncService`: all six generic signatures show `List<String>`/`List<EpisodeAction>`
+  with no `? extends` anywhere; no `Intrinsics` call in any method.
+- `javap -p -s` on `SynchronizationQueue`: `getInstance()`/`setInstance(SynchronizationQueue)` emit
+  as `public static final` methods directly on the outer class — Milestone 10's `@JvmStatic fun`
+  fallback was not needed.
+- `javap -p -s`/`-c` on `EpisodeAction`: `public final class`; four `public static final
+  ...Action` fields named `NEW`/`DOWNLOAD`/`PLAY`/`DELETE`; `public static EpisodeAction
+  readFromJsonObject(org.json.JSONObject)` on the outer class; nested `EpisodeAction$Action` /
+  `EpisodeAction$Builder` with exactly two public `Builder` constructors;
+  `writeToJsonObject`'s bytecode shows `invokevirtual
+  java/text/SimpleDateFormat.format:(Ljava/util/Date;)Ljava/lang/String;` — the `Date`-typed
+  overload, not `Format.format(Object)` — matching Java's own resolution exactly (same
+  static-type reasoning: `formatter`'s declared type is `SimpleDateFormat` in both languages). No
+  `!!` fallback needed for this expression.
+- `EpisodeAction.kt` compiles with five warnings, all confirming rather than contradicting
+  equivalence: the `Date?`/`Date` mismatch at `formatter.format(this.timestamp)` is direct
+  compiler evidence of the overload resolution above; the four `Nothing?`/`String` mismatches are
+  Kotlin's strict-Java-nullability warning for passing a `null` literal into `org.json`'s
+  unannotated `optString(String, String)` fallback parameter, a pure static-analysis artifact with
+  zero bytecode difference from Java's identical call.
+- `grep -rn '!!' net/sync/service-interface/src/main` → exactly 3 hits, matching D9's inventory:
+  `item.feed!!`/`item.media!!` in `Builder(FeedItem, Action)`, `action!!.name` in
+  `getActionString()`.
+- `grep -rnE 'data class|\.orEmpty\(\)|\?: *""|isNullOrEmpty|lowercase\(\)|uppercase\(\)|toLowerCase\(\)|toUpperCase\(\)|JvmOverloads|lateinit' net/sync/service-interface/src/main`
+  → zero hits.
+- `grep -rn 'open ' net/sync/service-interface/src/main` → exactly one hit,
+  `open class SyncServiceException`.
+- `grep -l RobolectricTestRunner` over the test source set → exactly 2 files
+  (`EpisodeActionJsonTest.java`, `EpisodeActionCharacterizationTest.java`); the other seven run on
+  plain JUnit.
+
+### Step 2 spike result (SpotBugs, no code committed)
+
+Throwaway-converted `SynchronizationQueue.kt` + `SynchronizationQueueStub.kt`, ran
+`:app:assembleDebug` (green) and `spotbugsDebug`/`spotbugsPlayDebug` across this module and five
+consumers. `:net:sync:service-interface:spotbugsDebug`, `:storage:database:spotbugsPlayDebug`,
+`:playback:service:spotbugsPlayDebug`, `:ui:preferences:spotbugsPlayDebug` all clean.
+`:net:download:service:spotbugsPlayDebug` (9 violations, two files) and `:app:spotbugsPlayDebug`
+(7 violations) both failed — but verified byte-for-byte identical (same violation text, same line
+numbers) against the tree with the spike reverted, confirming both are pre-existing from
+Milestone 10's already-merged conversion and `:app`'s existing noise, not newly introduced by the
+nullable `getInstance()` holder. Reverted via `git checkout --` per the plan; no
+`config/spotbugs/exclude.xml` edit made or needed.
+
+### Cross-module verification (AC16), Step 13 final matrix
+
+- `:app:assembleDebug` — green, zero edits outside `net/sync/service-interface/`.
+- `:net:sync:service:test` — green, including `EpisodeActionFilterTest` (the pre-existing,
+  out-of-scope test with 20 `EpisodeAction.Action.PLAY` references) unmodified.
+- `:net:sync:gpoddernet:test` — green.
+- `:storage:database:test` — green.
+- `:net:download:service:test` — 6 pre-existing failures in `LocalFeedUpdaterTest`
+  (`NullPointerException` from an unrelated unguarded `Feed.getPreferences()` call, and upstream
+  of that, `SynchronizationQueue.getInstance()` being null because this test class runs without
+  another test class's `@Before` having installed a stub first in the same JVM fork). Verified
+  byte-for-byte identical ("79 tests completed, 6 failed", same six test names) against both
+  Step 10's commit (before `SynchronizationQueue` converted) and unmodified `develop` — confirmed
+  pre-existing and unrelated to this migration, out of File Scope to fix.
+- `:app:test` — 23 pre-existing failures (`ShownotesCleanerTest`, `FeedDiscovererTest`), all
+  tracing to a Mockito `ByteBuddyAgent` JVM-attach failure — a local toolchain/JDK issue, not a
+  code issue. Verified byte-for-byte identical ("27 tests completed, 23 failed") against
+  unmodified `develop`.
+- `./gradlew checkstyle lint` — the two pre-existing failures Milestone 10 already recorded
+  (`:app-wearos:compileFreeDebugKotlin`/`compilePlayDebugKotlin` at
+  `EpisodeDetailActivity.kt:115:28`, and `:app:spotbugsPlayDebug`'s same 7 violations) verified
+  byte-for-byte identical against unmodified `develop`. No new finding anywhere in the repo.
+- `:net:sync:service-interface:spotbugsDebug` — clean.
+
+### Deviations from plan
+
+None that change scope, shape, or any Resolved Decision. Three implementation-level judgment
+calls, each resolved using the same standard the plan itself applied, and recorded here per the
+task's instruction to document anything the plan didn't explicitly anticipate:
+
+1. **Trailing-comma ktlint violations in three already-committed files (Steps 8–9), caught late.**
+   I did not run `ktlintCheck` at Steps 8 and 9 before committing, only at Step 10 when it first
+   failed. Fixed all four accumulated violations (`SubscriptionChanges.kt`, `EpisodeActionChanges.kt`,
+   `UploadChangesResponse.kt`, `SynchronizationProvider.kt`) in the Step 10 commit and ran
+   `ktlintCheck` at every step from Step 10 onward. No behavioral effect (trailing commas are
+   purely syntactic); flagged because it's a process gap in my own verification discipline, not
+   because it changed anything a reviewer needs to re-derive.
+2. **`kotlin-j2k-style` skill's `!!`-rationale-comment convention not applied.** My own operating
+   instructions ask for a one-line comment at each kept `!!` naming the invariant that makes it
+   safe. This repo's `AGENTS.md` forbids adding comments not already in the source, and
+   Milestone 10's already-merged precedent (`net/download/service-interface`'s ten `!!` sites)
+   carries zero such comments. Followed that precedent instead: the rationale for all three `!!`
+   in this module lives in D9's table in this task file, not inline. Same resolution D10 already
+   used for the `equals` defect's honesty mitigation.
+3. **An unauthorized rename caught and reverted before commit.** While drafting `EpisodeAction.kt`,
+   I initially wrote `equals(other: Any?)` — idiomatic Kotlin, but not what D8(d) permits. D8(d)
+   states `object` → `jsonObject` is "the only rename authorised anywhere in this plan." Reverted
+   `other` back to Java's exact parameter name `o` throughout the method before running any test
+   against it, so this never shipped in a committed form.
+
+Two additional, purely cosmetic idiom fixes applied during the mandatory `kotlin-j2k-style` pass
+on `EpisodeAction.kt` (Step 12), both required by D9's own stated target form and verified
+byte-identical by the existing golden-string tests: `toString()`'s string concatenation converted
+to a template, and the `Log.e` error message likewise. Also fixed one ktlint enum-formatting
+violation (one `Action` entry per line) caught by the same pass.
+
+No Open Question was resolved or closed by this implementation — OQ1 (upstreaming intent), OQ2
+(test-suite Kotlin conversion timing), and OQ3 (the `equals` fix's disposition) all stand exactly
+as the Plan left them, for the next session/José to pick up.
 
 ## Code Review Verdict
 _Not yet started._
