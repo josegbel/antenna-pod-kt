@@ -1,5 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.ktlint)
 }
 apply from: "../../../common.gradle"
 
@@ -14,4 +16,10 @@ dependencies {
     annotationProcessor libs.androidx.annotation
     implementation libs.rxandroid
     implementation libs.rxjava
+
+    testImplementation libs.junit
+    // Disclosed, scoped exception to this repo's Robolectric-free precedent (kotlin milestone 11):
+    // org.json.JSONObject is an Android-framework stub under plain JUnit, so EpisodeAction's JSON
+    // read/write characterization tests need it. Do not broaden usage beyond those two test files.
+    testImplementation libs.robolectric
 }
