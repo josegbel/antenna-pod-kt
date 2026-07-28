@@ -4,7 +4,7 @@
 > **Task file:** `tasks/antennapod-net-sync-service-interface-kotlin.md`
 
 ## Status
-RED-TEAM IMPLEMENTATION APPROVED (loop 1 of max 2) — `legacy-android-red-team` independently re-ran the 83-test suite, `:app:assembleDebug`, four consuming modules' tests, and `javap`-level bytecode checks against a fresh build (not prior stages' pasted output); disassembled the `Builder(FeedItem, Action)` constructor's `Intrinsics` calls by hand to confirm the plan's own red-team loop-1 fixes hold at the bytecode level; extended the SpotBugs sweep to two modules (`:net:sync:service`, `:net:sync:gpoddernet`) no prior stage's explicit check list named, given their direct coupling to the converted API — both clean. Two MINOR findings recorded (a stale warning count in Implementation Notes; a low-probability coverage gap in the mandatory-field guard's empty-episode/empty-action cases), neither blocking. See task file Red-Team Verdict (Implementation). **Milestone 11 is cleared for PR.**
+DONE — PR opened, awaiting human review/merge
 
 ## Last updated
 2026-07-28
@@ -16,7 +16,7 @@ RED-TEAM IMPLEMENTATION APPROVED (loop 1 of max 2) — `legacy-android-red-team`
 - [x] Implement (android-migration-developer) — all 13 Steps complete, see task file Implementation Notes
 - [x] Code review (migration-code-reviewer) — loop 1 APPROVE, see task file Code Review Verdict
 - [x] Red-team implementation (legacy-android-red-team) — loop 1 APPROVE, see task file Red-Team Verdict (Implementation)
-- [ ] PR opened
+- [x] PR opened
 
 ## Decisions for next session
 - Module: `:net:sync:service-interface`. Track: `kotlin` only. Selected as Milestone 11, the fourth portfolio case-study module, chosen as the sibling to Milestone 10's `:net:download:service-interface` — same service-interface/service split pattern, different domain (sync vs download).
@@ -65,8 +65,17 @@ Loop 1 CHALLENGE found: (1) CRITICAL — the PLAY-gate test pair discriminated `
 - **Cheap early de-risk:** throwaway-convert only `SynchronizationQueue.kt` and run `./gradlew lint` to learn whether emitting `@Nullable` on `getInstance()` triggers new SpotBugs `NP_*` findings in the 5 dependent modules, before sinking effort into tests. SpotBugs is a hard gate (`common.gradle:96-129` throws despite `ignoreFailures = true`), and `config/spotbugs/exclude.xml` has no `net.sync` entry.
 - **Interop width:** 7 dependent Gradle modules (2 more than M10), 28 referencing files, **all Java, zero Kotlin callers**. 22 `getInstance()` sites + 5 `setInstance()` sites (4 of them tests in *other* modules that install `SynchronizationQueueStub`).
 
+## Pre-PR gate verification (2026-07-28)
+`./gradlew checkstyle lint` run in full (untruncated) against the branch: **3 failures**, byte-for-byte identical to Milestone 10's already-disclosed pre-existing baseline — `:app-wearos:compilePlayDebugKotlin`/`compileFreeDebugKotlin` (`EpisodeDetailActivity.kt:115:28`, `String?` vs `String` mismatch) and `:app:spotbugsPlayDebug` (7 violations: 2× `MainActivity` Snackbar NP_NULL_PARAM_DEREF, 1× `FeedInfoFragment` NP_NULL_ON_SOME_PATH, 1× `OnlineFeedViewActivity` Snackbar, 1× `PreferenceActivity` Snackbar, 2× `QueueFragment` NP_NULL_ON_SOME_PATH — same lines as Milestone 10's disclosure). None of these touch `net/sync/service-interface/` or any file in this milestone's diff. Not fixed, per this repo's precedent of disclosing rather than fixing pre-existing, unrelated static-analysis findings surfaced incidentally by a migration (`:model` D9/D20, `:event` AC10, `:net:download:service-interface` Milestone 10).
+
+## PR
+https://github.com/josegbel/antenna-pod-kt/pull/17 (branch `kotlin/net-sync-service-interface` → `develop`).
+
 ## Resume command
-Research, Plan, and plan red-team (both loops) are complete in `tasks/antennapod-net-sync-service-interface-kotlin.md` (Plan = D0–D17, 13 Steps, File Scope of 5 modified + 9 renamed + 9 created files, AC1–AC18, plus OQ1–OQ3; Plan Revision 1 closed loop 1's findings; loop 2 = APPROVE). Implementation is **done** — see below. Code review is **done** (loop 1 of max 3, APPROVE, zero findings — see task file Code Review Verdict). **Next: invoke `legacy-android-red-team` for the implementation pass** (fresh 2-loop budget, separate from the plan-review loops already used).
+Milestone 11 is DONE. PR #17 opened, awaiting José's review/merge. Nothing further to do for this milestone.
+
+## Prior resume note (superseded)
+Research, Plan, and plan red-team (both loops) are complete in `tasks/antennapod-net-sync-service-interface-kotlin.md` (Plan = D0–D17, 13 Steps, File Scope of 5 modified + 9 renamed + 9 created files, AC1–AC18, plus OQ1–OQ3; Plan Revision 1 closed loop 1's findings; loop 2 = APPROVE). Implementation is **done** — see below. Code review is **done** (loop 1 of max 3, APPROVE, zero findings — see task file Code Review Verdict). Implementation red-team is **done** (loop 1 of max 2, APPROVE, two non-blocking MINOR findings — see task file Red-Team Verdict (Implementation)).
 
 ### Implementation summary (2026-07-28) — what the code reviewer / implementation red-team should look at
 
