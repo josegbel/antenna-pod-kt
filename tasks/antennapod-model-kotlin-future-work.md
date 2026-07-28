@@ -49,6 +49,34 @@ The disclosure comment added in Milestone 6 says Robolectric is scoped to "this 
 
 **Update, 2026-07-26 (`:event` kotlin milestone, Milestone 8):** `config/checkstyle/suppressions.xml:16` (`WhitespaceAround`) names `SkipIntroEndingChangedEvent.java`, orphaned by that file's Step 4 conversion to `.kt` (`this.skipIntro= skipIntro;`, the line the suppression existed for, no longer exists). Same shape as the two `:model` entries above, same reasoning for leaving it alone (Plan Decision D20 in `tasks/antennapod-event-kotlin.md`) — one more data point for "handle once, repo-wide."
 
+**Update, 2026-07-27 (`:net:download:service-interface` kotlin milestone, Milestone 10):** same gap, third module. `compileFreeDebugJavaWithJavac`/`compilePlayDebugJavaWithJavac` go `NO-SOURCE` as of Step 8 (7/7 files converted); its test source set is deliberately kept Java (D13, equivalence-oracle rationale — see `tasks/antennapod-net-download-service-interface-kotlin.md`), so `-Xlint:all -Werror` still covers this module's tests today, same shape as `:event` before its Milestone 9. `checkstyle`'s `src/main/java` sourcing likewise goes `NO-SOURCE` for this module now, confirmed via `./gradlew :net:download:service-interface:checkstyle`.
+
+### 6. `TextUtils.isEmpty` → `isEmpty()` swap deferred in `FileNameGenerator`
+**Raised:** 2026-07-25 (Unknown 5), resolved as "do not take" 2026-07-27 during Milestone 10 (`:net:download:service-interface`) planning (D11).
+**Status:** Deferred — logged rather than taken, per the plan's own decision.
+
+`FileNameGenerator.kt:46`'s `TextUtils.isEmpty(filename)` (applied to the non-null local `buf.toString().trim()`) is exactly equivalent to `filename.isEmpty()`, which would be the [[kmp-portability-over-robolectric-shims]]-consistent swap and would drop this file's only remaining `android.*` import. It was **not** taken: this module also depends on `android.os.Bundle`, `android.util.Log` and `android.webkit.URLUtil` elsewhere (`DownloadRequestBuilder.kt`, `DownloadRequestCreator.kt`), so it can never be KMP-portable regardless, and the swap would not remove Robolectric from a single test — three `FilenameGeneratorTest` tests still need `InstrumentationRegistry` for `createFiles`, and the new `DownloadRequestCreatorTest` needs Robolectric for `Log`, `URLUtil`, and `UserPreferences` independently of this file. Against zero benefit, taking it would only have widened the diff against this project's `AGENTS.md` minimal-diff rule. `TextUtils.isEmpty(filename)` was transcribed verbatim.
+
+**Recommendation when picked up:** only worth revisiting if `:net:download:service-interface` ever sheds its other `android.*` dependencies (unlikely, given `Bundle`/`Log`/`URLUtil` are load-bearing for this module's actual job) — i.e., effectively never on its own; not worth a dedicated pass.
+
+### 7. SpotBugs gate only covers the `play` flavor for flavored modules
+**Raised:** 2026-07-27, during Milestone 10 (`:net:download:service-interface`) planning/implementation.
+**Status:** Deferred — confirmed real, not this milestone's to close (edits `common.gradle`, a shared repo-wide file, out of File Scope).
+
+`common.gradle`'s SpotBugs `doLast` parses only `build/reports/spotbugs/debug.xml` and `playDebug.xml`, and its `lint` task depends only on `spotbugsDebug`/`spotbugsPlayDebug`. A flavored module (`playFlavor.gradle` applied) emits `freeDebug.xml`/`playDebug.xml` instead, so **only the play flavor's findings can ever fail the build** for such a module; the free flavor's SpotBugs output is silently unchecked by the standard `lint` task. `:model` and `:event` never hit this because neither has flavors. Verified during Milestone 10 by running `spotbugsFreeDebug` and `spotbugsPlayDebug` by hand for `:net:download:service-interface` — both clean, no exclude.xml entry needed — but that verification is manual per-module today, not gated automatically. Separately, running both flavors' spotbugs tasks together in one Gradle invocation races on the shared `doLast` XML read (`Premature end of file` on whichever flavor's XML the other task's `doLast` reads while it's still being written); run them as separate Gradle invocations to avoid this.
+
+**Recommendation when picked up:** repo-wide `common.gradle` fix — make the SpotBugs `doLast`/`lint` dependency flavor-aware (enumerate actual variants rather than hardcoding `debug`/`playDebug`), affecting every flavored module, not just this one.
+
+### 8. Vestigial `java-test-fixtures` plugin and `UserPreferences.getDataFolder`'s unannotated nullable return
+**Raised:** 2026-07-27, Milestone 10 (`:net:download:service-interface`) research/plan (D15).
+**Status:** Deferred — both are pre-existing conditions this milestone deliberately left alone, not new debt it created.
+
+`net/download/service-interface/build.gradle:3` applies `id("java-test-fixtures")`, but there is no `src/testFixtures` source set and no consumer anywhere in the repo uses `testFixtures(project(...))`. It is inert (produces cosmetic `NO-SOURCE` `spotbugsTestFixtures`/`checkstyleTestFixtures` tasks) and removing it would widen this milestone's diff for no behavioral gain — left in place per D15.
+
+Separately, `storage/preferences/src/main/java/de/danoeh/antennapod/storage/preferences/UserPreferences.java:717`'s `getDataFolder(@Nullable String)` is documented in its own Javadoc as possibly returning `null`, but carries no `@Nullable` return annotation. Kotlin therefore sees a platform type (`File!`) at this module's two call sites (`DownloadRequestCreator.kt`'s `getFeedfilePath`/`getMediafilePath`) and does not force a null decision — the one place in this conversion where a real, documented null risk is *not* surfaced by moving to Kotlin. Fixing it means annotating `:storage:preferences`, out of this milestone's File Scope.
+
+**Recommendation when picked up:** the `java-test-fixtures` removal is a trivial one-line fix, bundle into whichever future `:net:download:service-interface` change next touches `build.gradle` anyway. The `UserPreferences` annotation is `:storage:preferences`'s own milestone — likely paired with any future `kotlin`-track work on that module, since adding `@Nullable` to Java in isolation is itself a small, reviewable, non-Kotlin change.
+
 ## Resolved (kept for history)
 
 - **Tier B Robolectric-free precedent (José, 2026-07-21):** `:model` unit tests must stay bare-JVM, no Robolectric — motivated `EmbeddedChapterImage`/`SubscriptionsFilter`/`FeedPreferences` (Milestone 5) using stdlib swaps instead of framework shims. See [[kmp-portability-over-robolectric-shims]]. Applies as the default for `:model`, but **not** to Tier C (see below).
