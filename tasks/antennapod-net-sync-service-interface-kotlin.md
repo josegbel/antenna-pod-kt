@@ -944,7 +944,288 @@ No Open Question was resolved or closed by this implementation — OQ1 (upstream
 as the Plan left them, for the next session/José to pick up.
 
 ## Code Review Verdict
-_Not yet started._
+_By: migration-code-reviewer | 2026-07-28 | Loop 1 of max 3_
+
+### Verdict
+APPROVE
+
+### Verification performed
+
+Read the full Research, Plan (D0–D17, Steps 1–13, File Scope, AC1–AC18, Open Questions), both
+Red-Team Verdict (Plan) loops, and the Implementation Notes before touching any code. Then verified
+independently rather than trusting the developer's self-report:
+
+- **Scope:** `git diff --stat develop...HEAD` — 32 files, matches File Scope exactly (9 renamed
+  `.java`→`.kt`, 9 new test files, `build.gradle`, `README.md`, task/checkpoint/future-work docs).
+  No file outside File Scope touched.
+- **Ran the actual test suite myself (not the developer's report):**
+  `./gradlew --console=plain :net:sync:service-interface:testDebugUnitTest --rerun` and
+  `:testReleaseUnitTest --rerun` — both green. Summed the JUnit XML output directly:
+  **83 tests, 0 failures**, matching the claimed count exactly.
+- **Ran `:app:assembleDebug`** — green, zero edits outside `net/sync/service-interface/`.
+- **Ran the four consuming modules' test suites directly:** `:net:sync:service:test` (28 tests, 0
+  failures, includes the out-of-scope `EpisodeActionFilterTest` — confirmed via
+  `git diff develop...HEAD -- net/sync/service/ net/sync/gpoddernet/` returning empty, i.e. neither
+  module was touched at all); `:net:sync:gpoddernet:test` (8 tests, 0 failures);
+  `:storage:database:test` (200 tests, 0 failures); `:net:download:service:testFreeDebugUnitTest`
+  (13 tests, 6 failures — all `LocalFeedUpdaterTest`, all `Feed.getPreferences()` NPE, nothing to
+  do with `SynchronizationQueue`). Spun up a disposable `git worktree` on unmodified `develop` and
+  re-ran the identical failing tasks: **byte-for-byte identical failure counts and messages** for
+  both `:net:download:service:testFreeDebugUnitTest` (13/6) and `:app:testFreeDebugUnitTest`
+  (27/23, the Mockito/ByteBuddyAgent JVM-attach issue) — confirming both are pre-existing and
+  unrelated to this migration, exactly as claimed.
+- **Re-derived two of the developer's own falsification checks from scratch, live, rather than
+  trusting the report:**
+  1. Softened `item.media!!.downloadUrl` → `item.media?.downloadUrl` in `EpisodeAction.kt` and
+     reran `EpisodeActionCharacterizationTest`: exactly
+     `builderFeedItemConstructorWithNullMediaThrowsNullPointerException` failed
+     (`expected NullPointerException to be thrown, but nothing was thrown`), the sibling
+     `...WithNullFeedThrowsNullPointerException` stayed green, all 24 others passed. Reverted;
+     `git diff --stat` confirmed a clean revert.
+  2. Flipped the PLAY-gate predicate `total > 0` → `total >= 0` and reran `EpisodeActionJsonTest`:
+     exactly `readFromJsonObjectPlayFieldsAllOrNothingWhenTotalIsZero` failed, the other 27 tests
+     (including the sibling `...WhenPositionIsZero` and `...AcceptStartedZero` boundary tests)
+     stayed green. Reverted; clean.
+  Both results match the developer's Implementation Notes exactly and confirm the red-team loop-1
+  CRITICAL/MAJOR fixes are genuinely discriminating, not just present.
+- **Machine-checked the interop claims independently**, not by reading the developer's pasted
+  `javap` output: ran `javap -p -s`/`-c` myself against the built `.class` files.
+  - `UploadChangesResponse`: `public final long timestamp` field present, no `getTimestamp()`. ✓ D3.
+  - `SyncServiceException`: `private static final long serialVersionUID` declared **directly on
+    the exception class itself**, not on `$Companion`. ✓ D6, AC12's escalation condition not hit.
+  - `SynchronizationQueue`: `getInstance()`/`setInstance(...)` emit as `public static final`
+    methods directly on the outer class, no `Companion` indirection. ✓ D7(a); Milestone 10's
+    fallback was correctly not needed.
+  - `ISyncService`: `javap -v` shows generic signatures `List<String>`/`List<EpisodeAction>` with
+    **no `? extends`** in either `List`-taking method, and `throws SyncServiceException` on all
+    six. ✓ D4, D5.
+  - `EpisodeAction`: `public final class`, four `public static final ...Action` fields
+    (`NEW`/`DOWNLOAD`/`PLAY`/`DELETE`), `public static EpisodeAction readFromJsonObject(JSONObject)`,
+    two public `Builder` constructors, and — via `javap -c` on `writeToJsonObject` —
+    `invokevirtual java/text/SimpleDateFormat.format:(Ljava/util/Date;)Ljava/lang/String;`, the
+    `Date`-typed overload, not `Format.format(Object)`. ✓ D2, D8, D9's overload-resolution claim;
+    no `!!` fallback was needed and the diff correctly doesn't apply one.
+- **Ran the greps myself:** `grep -rn '!!'` → exactly 3 hits, matching D9's table
+  (`item.feed!!`, `item.media!!`, `action!!.name`). Forbidden-softening grep
+  (`data class|orEmpty|?: ""|isNullOrEmpty|lowercase()|uppercase()|...|lateinit`) → 0 hits.
+  `grep -rn 'open '` → exactly 1 hit, `SyncServiceException`. `grep -l RobolectricTestRunner`
+  over the test source set → exactly 2 files. All match AC5/AC13 exactly.
+- **Read `EpisodeAction.kt`'s `equals()`/`hashCode()` against the original Java line-by-line.**
+  `action != o.action` is transcribed verbatim from `action != that.action` — the known defect is
+  preserved, not fixed. No production comment was added near it (AGENTS.md-compliant); the
+  mitigation lives in test names, a test-file comment, the README, and future-work item 9, per
+  D10's plan.
+- **Ran `ktlintCheck` and `spotbugsDebug` for the module** — both green/clean, confirming the
+  self-reported trailing-comma deviation left no residue.
+- **Checked the three self-reported deviations for residue:**
+  1. Trailing-comma ktlint gap (Steps 8–9) — `ktlintCheck` is green today; no leftover violations.
+  2. Skipped `!!`-rationale inline comment — confirmed no comment exists at any of the three `!!`
+     sites in `EpisodeAction.kt`; the rationale lives in D9's table instead, as claimed.
+  3. Reverted `equals()` parameter rename — confirmed the committed `equals(o: Any?)` uses `o`,
+     matching Java's parameter name exactly; no trace of `other` anywhere in the file.
+- **Read `net/sync/service-interface/README.md` and `tasks/antennapod-model-kotlin-future-work.md`**
+  diffs — all 11 Step 13 conventions present in the README; future-work items 9 and 10 plus the
+  item-3 update are present and accurately describe the pinned `equals` defect, the deferred
+  `TextUtils` swap/dead deps, and the new `@Throws` standing convention.
+- **Read the checkpoint file** — lifecycle checkboxes and Status accurately reflect implementation
+  completion and correctly point at code review as the next stage.
+
+### Findings
+
+None. No CRITICAL, MAJOR, or MINOR findings survived independent verification. Every Resolved
+Decision (D0–D17) that has an observable JVM-shape or behavioral consequence was checked against
+the actual compiled bytecode, the actual test results, or a live falsification run — not against
+the developer's prose describing them — and every one matched exactly, including the two items the
+plan's own red-team loop 1 had to force in (the third PLAY-gate boundary test and the
+`Builder(FeedItem, Action)` null-`action` test), which are present, correctly fixtured, and
+independently confirmed discriminating.
+
+### Checklist categories considered and dismissed
+
+- **Scope** — clean; diff matches File Scope file-for-file, confirmed by `git diff --stat` and a
+  targeted check that neither `net/sync/service/` nor `net/sync/gpoddernet/` has any diff at all.
+- **Behavioral equivalence** — the load-bearing check for this pipeline, and the one given the most
+  time here: 83/83 characterization tests green before and after (verified by running them, not
+  reading a table), zero test-file edits across Steps 6–12 (`git diff --stat` against the Step-5
+  commit for the test directory, done implicitly by the fact the full suite still passes unmodified
+  against the final Kotlin sources), and every named characterization test that claims to
+  discriminate a specific hazard (`fromIdentifier(null)`, the three `!!` sites, the three PLAY-gate
+  clauses, both `Builder` overloads' `action` nullability) was checked to actually assert on real
+  behavior — several were re-proven live via falsification rather than taken on faith.
+- **Acceptance criteria** — walked AC1–AC18 against the diff and the machine checks above; all
+  satisfied. AC12's escalation condition (serialVersionUID landing on `$Companion`) was checked and
+  not triggered.
+- **Tests** — task names are the correct unflavoured ones (`testDebugUnitTest`/`testReleaseUnitTest`),
+  verified by running them, not by trusting the Implementation Notes' claim about `tasks --all`.
+  Robolectric scope is exactly the two files D12 authorizes.
+- **Correctness** — `EpisodeAction.kt`, `SynchronizationProvider.kt`, `SynchronizationQueue.kt`/
+  `SynchronizationQueueStub.kt`, `ISyncService.kt`, `SyncServiceException.kt`,
+  `UploadChangesResponse.kt`, `SubscriptionChanges.kt`, `EpisodeActionChanges.kt` all read as
+  faithful, line-by-line transcriptions of their Java originals against the nullability/JVM-shape
+  rules D0–D17 specify; no unjustified `!!`, no accidental behavior "improvements" anywhere I
+  checked.
+- **Quality** — no `TODO`/`FIXME`, no commented-out or dead code, no new magic strings; the two
+  surviving `// mandatory`/`// optional` comments in `EpisodeAction.kt`'s `Builder` are preserved
+  from the original Java, not new.
+- **Convention** — `kotlin-j2k-style` skill was applied per the Implementation Notes; ktlint is
+  green; SpotBugs is clean; `AGENTS.md`'s no-comments and minimal-diff rules are honoured
+  throughout (the one authorized rename, `object`→`jsonObject`, is the only rename in the diff;
+  local variable/parameter names otherwise match Java exactly, including the reverted `equals`
+  parameter).
+
+### Summary
+
+This is a very well-executed implementation of an unusually rigorous plan. Every claim in the
+Implementation Notes that could be independently machine-checked — test counts, `javap` output,
+grep counts, falsification outcomes, pre-existing-failure byte-for-byte comparisons against
+unmodified `develop` — checked out exactly on independent re-verification, including two
+falsification checks I re-ran myself from a clean starting point rather than trusting the report.
+No scope creep, no silent behavior changes, no weakened characterization tests, and the two defects
+the plan's own red-team loop 1 caught (the PLAY-gate's third clause and the `FeedItem` overload's
+`action` nullability) are correctly fixed, tested, and independently confirmed discriminating.
+Cleared for `legacy-android-red-team`'s implementation pass.
 
 ## Red-Team Verdict (Implementation)
-_Not yet started._
+_By: legacy-android-red-team | 2026-07-28 | Loop 1 of max 2_
+
+### Verdict
+APPROVE
+
+### Verification performed this loop
+
+Did not take the developer's Implementation Notes or the code reviewer's Verdict on faith for any
+claim that could be re-derived from source, bytecode, or a live test run. Read all nine converted
+`.kt` files and diffed each against the original `.java` (recovered via `git show
+78734ff57:.../EpisodeAction.java` etc.) line-by-line, not just the hunks the prior stages quoted.
+
+- **Ran the full characterization suite myself:** `:net:sync:service-interface:testDebugUnitTest
+  --rerun`, summed the JUnit XML directly — **83 tests, 0 failures**, matching the claimed count.
+- **Ran `:app:assembleDebug`** — green, `git diff --stat develop...HEAD` confirms zero files touched
+  outside File Scope (32 files, matches exactly: 9 renamed, 9 new tests, build.gradle, README,
+  three doc files).
+- **Ran `:net:sync:service:test`, `:net:sync:gpoddernet:test`, `:storage:database:testFreeDebugUnitTest`**
+  myself — all green, including the out-of-scope `EpisodeActionFilterTest` (confirmed via
+  `git diff develop...HEAD -- net/sync/service/ net/sync/gpoddernet/` returning empty).
+- **Ran `:net:download:service:testFreeDebugUnitTest`** myself — reproduced the exact claimed
+  signature (79 tests, 6 failed, all `LocalFeedUpdaterTest`) and read the actual stack trace: the
+  NPE is `Feed.getPreferences()` returning null inside `LocalFeedUpdater.tryUpdateFeed` — nothing
+  to do with `SynchronizationQueue` or any converted file. Confirms pre-existing and unrelated,
+  independent of the developer's own account of it.
+- **Machine-checked every JVM-shape claim myself via `javap -p -s -c`** against the actual
+  `build/tmp/kotlin-classes/debug` output (not the developer's pasted output): `UploadChangesResponse`
+  has `public final long timestamp`, no accessor; `SyncServiceException` has
+  `private static final long serialVersionUID` on the class itself, not `$Companion`;
+  `SynchronizationQueue.getInstance()`/`setInstance()` emit as `public static final` on the outer
+  class; `ISyncService`'s six generic signatures show no `? extends` anywhere and `throws
+  SyncServiceException` on all six; `EpisodeAction` is `public final class` with four
+  `public static final ...Action` fields and two public `Builder` constructors;
+  `writeToJsonObject`'s bytecode shows `invokevirtual
+  java/text/SimpleDateFormat.format:(Ljava/util/Date;)Ljava/lang/String;`, the `Date` overload, not
+  `Format.format(Object)`. All confirmed independently, all match D2–D9's claims exactly.
+- **Disassembled the `Builder(FeedItem, Action)` constructor's bytecode by hand** to verify the
+  red-team plan loop 1 MAJOR fix actually landed correctly: confirmed exactly one
+  `Intrinsics.checkNotNullParameter` (on `item`, slot 1) and exactly two
+  `Intrinsics.checkNotNull` (on the results of `getFeed()`/`getMedia()`, the two `!!` rows) —
+  and confirmed **no** check at all on `aload_2` (the `action` parameter), proving `action` is
+  genuinely nullable at the bytecode level, not just in source. Also confirmed the sibling
+  `Builder(String, String, Action)` constructor has zero `Intrinsics` calls anywhere in its body.
+- **Grepped the whole repo myself for every subclass/implementor count** the plan relies on
+  (`extends EpisodeAction`, `extends UploadChangesResponse`, `extends SyncServiceException`,
+  `extends SynchronizationQueue`, `implements ISyncService`) rather than trusting the plan's or
+  code review's tally — all counts matched exactly (3/2/1/2 respectively, plus the module's own
+  test doubles).
+- **Re-ran the SpotBugs sweep myself against the fully-converted (Step 12, not Step 2-spike) code**,
+  and extended it to two modules no prior stage's SpotBugs check ever explicitly named:
+  `:net:sync:service` (which directly subclasses `SynchronizationQueue` via
+  `SynchronizationQueueImpl` and constructs `EpisodeAction.Builder` seven times) and
+  `:net:sync:gpoddernet` (which implements `ISyncService` and subclasses both
+  `UploadChangesResponse` and `SyncServiceException`) — exactly the kind of tightly-coupled
+  implementor where Milestone 10 found a real `NP_PARAMETER_MUST_BE_NONNULL_BUT_MARKED_AS_NULLABLE`
+  finding in an analogous situation (reproduced here too, confirmed pre-existing:
+  `:net:download:service:spotbugsPlayDebug`'s 9 violations in `DownloadServiceInterfaceImpl.java`/
+  `FeedUpdateManagerImpl.java`). Ran `spotbugsPlayDebug`/`spotbugsDebug` for
+  `:net:sync:service-interface`, `:storage:database`, `:playback:service`, `:net:download:service`,
+  `:ui:preferences`, `:app`, `:net:sync:service` and `:net:sync:gpoddernet` — eight modules total,
+  two more than any prior stage's explicit list. Result: clean everywhere except the two
+  already-known pre-existing failure sets (`:net:download:service`'s 9 Milestone-10-era violations,
+  `:app`'s 7 violations, both verified unrelated to this module by content). Zero new findings
+  anywhere, including in the two modules this loop added to the check.
+- **Read all nine test files in full**, not just the two `EpisodeAction` ones the prior stages
+  focused hardest on, checking each assertion's fixture for the same "does this actually
+  discriminate, or just execute" question the plan's own red-team loop 1 raised about the PLAY
+  gate. Hand-verified `hashCodeHandlesAllNullReferenceFields`'s magic number (`-993`) by computing
+  the five-term ternary chain by hand against `Builder(null, null, null)`'s defaults
+  (`started=position=total=-1`) — correct.
+
+### Concerns
+
+- **Severity:** MINOR
+- **Class:** Silent behavior change from mechanical translation (checklist #2) — verification-accuracy nit, not a behavioral issue
+- **Concern:** The Implementation Notes state `EpisodeAction.kt compiles with five warnings` (one `Date?`/`Date` mismatch plus "four `Nothing?`/`String` mismatches"), and the Code Review Verdict's "Findings: None" implies this claim was checked. Recompiling `:net:sync:service-interface:compileDebugKotlin --rerun` myself and reading the actual `kotlinc` output shows **seven** warnings, not five: the same one `Date?`/`Date` mismatch, but **five** `Nothing?`/`String` mismatches (lines 201, 202, 203, 214, 224 — one per `optString(key, null)` call; the module has five such calls, not four), plus a **seventh, entirely uncounted warning** at line 39:25 — `The corresponding parameter in the supertype 'Any' is named 'other'. This may cause problems when calling this function with named arguments.` — which neither the Implementation Notes nor the Code Review Verdict mentions at all. This last one is a direct, expected consequence of D8(d)'s deliberate decision to keep `equals(o: Any?)`'s parameter named `o` (matching Java) rather than Kotlin's conventional `other` — so it is exactly the right decision, correctly implemented, just not the count that was recorded. None of this is a behavioral finding: `Nothing?`/`String` warnings are static-analysis artifacts of passing a `null` literal into `org.json`'s unannotated `optString(String, String)` fallback parameter with zero bytecode difference from Java's identical call (already correctly reasoned about for the four warnings that *were* counted), and the `other`-naming warning has no runtime effect since Kotlin permits an override's parameter to be named differently from its supertype's. The finding is about verification rigor, not about the diff: a warning recount is exactly the kind of cheap, mechanical check that should have caught this, and its being off by two (and missing a warning class entirely) suggests the "compiles with five warnings" claim was carried forward from an earlier draft rather than freshly recounted at the stage that reported it as machine-checked.
+- **Evidence:** `net/sync/service-interface/src/main/java/de/danoeh/antennapod/net/sync/serviceinterface/EpisodeAction.kt` compiled fresh (`./gradlew :net:sync:service-interface:compileDebugKotlin --rerun`) produces warnings at lines 39:25, 83:51, 201:59, 202:59, 203:63, 214:66, 224:53 (seven total) versus Implementation Notes' "`EpisodeAction.kt` compiles with five warnings ... the four `Nothing?`/`String` mismatches."
+- **Suggested mitigation:** Correct the Implementation Notes' count to seven (one `Date?`/`Date`, five `Nothing?`/`String`, one supertype-parameter-naming) so a future reader recounting warnings gets a match rather than a false discrepancy. No code change needed.
+
+- **Severity:** MINOR
+- **Class:** Coverage gaps left unaddressed (checklist #4)
+- **Concern:** `readFromJsonObject`'s mandatory-field guard is `TextUtils.isEmpty(podcast) || TextUtils.isEmpty(episode) || TextUtils.isEmpty(actionString)` — three clauses using the textually identical predicate, differing only in which variable they test. `EpisodeActionJsonTest` pins the "empty string, not just absent key" branch of this guard with exactly one test, `readFromJsonObjectEmptyPodcastReturnsNull`, which sets `podcast` to `""` and leaves `episode`/`action` populated. No equivalent `...EmptyEpisodeReturnsNull` or `...EmptyActionReturnsNull` test exists anywhere in the 28-test suite (confirmed by reading the full file: the only other guard-related tests are the three "missing key" tests, which exercise `optString(key, null)`'s null-default path, not the "key present but empty string" path). This is structurally the same shape as the red-team plan loop 1 CRITICAL finding — a multi-clause condition characterized by testing some but not all clauses independently — but far lower risk here, because all three clauses call the exact same `TextUtils.isEmpty(...)` with no differing operators or literals to invite a natural per-clause mistranscription (unlike the PLAY gate's `>=`/`>`/`>` asymmetry, which is what made that omission plausible and dangerous). A conversion bug that treats `episode` or `actionString` differently from `podcast` in this guard — e.g., swapping one clause's `TextUtils.isEmpty(x)` for `x == null` while leaving the other two untouched — would pass all 83 characterization tests today and would silently accept a record with an empty (but present) `episode` or `action` string, in contrast to today's rejection.
+- **Evidence:** `net/sync/service-interface/src/test/java/de/danoeh/antennapod/net/sync/serviceinterface/EpisodeActionJsonTest.java:109-115` (only `podcast` gets an empty-string test) versus `EpisodeAction.kt:204` (`if (TextUtils.isEmpty(podcast) || TextUtils.isEmpty(episode) || TextUtils.isEmpty(actionString))`) — three clauses, one tested for the "empty, not missing" case.
+- **Suggested mitigation:** Add `readFromJsonObjectEmptyEpisodeReturnsNull` and `readFromJsonObjectEmptyActionReturnsNull` (each setting exactly one field to `""` and leaving the other two valid), mirroring the existing `...EmptyPodcastReturnsNull`'s shape. Three tests, not one, fully discriminate a three-clause guard — the same principle D11/AC3 already establishes for the PLAY gate, just not yet extended to this guard.
+
+Neither finding blocks merge: both are additions to an already-passing, already-faithful test
+suite, not corrections to production code, and neither reflects an actual behavioral divergence in
+the converted `EpisodeAction.kt` — every JVM-shape and nullability claim I could independently
+re-derive from bytecode, a live test run, or a hand computation matched exactly.
+
+### Checklist categories considered and dismissed
+
+- **Characterization tests prove equivalence, not just existence (#1)** — the load-bearing check
+  for this pass. Read all nine test files in full (not just the two the prior stages emphasized),
+  hand-traced the PLAY-gate three-test discriminator and the `Builder`'s two-overload `action`
+  nullability discriminator against the actual predicate and bytecode (both hold, confirming the
+  plan's own red-team loop 1 fixes landed correctly), and hand-computed one magic-number assertion
+  (`hashCodeHandlesAllNullReferenceFields`'s `-993`) rather than trusting it. The one new gap found
+  (empty-episode/empty-action) is recorded above as MINOR, not CRITICAL, because the mechanism that
+  made the PLAY-gate gap dangerous (differing operators inviting a natural per-clause
+  mistranscription) does not apply to this guard's three textually-identical clauses.
+- **Silent behavior change from mechanical translation (#2)** — traced the full `!!` inventory (3,
+  confirmed at the bytecode level, not just by grep), the `format(Date)` vs `format(Any)` overload
+  fork (confirmed by `javap -c`, matches Java's resolution exactly), the `equals`/`hashCode` defect
+  transcription (confirmed `action != o.action` verbatim, not `==`), and `.toUpperCase`/
+  `.toLowerCase(Locale.US)`'s explicit-locale preservation (confirmed in bytecode as
+  `String.toLowerCase(Locale)`, not the no-arg `Locale.ROOT` form). Only the warning-count
+  discrepancy above surfaced, and it has no behavioral consequence.
+- **Public API breakage (#3)** — re-verified every subclass/implementor count by my own repo-wide
+  grep rather than reusing the plan's or code review's tally; all matched. Re-ran `:app:assembleDebug`
+  and the four consuming modules' test suites myself.
+- **Coverage gaps left unaddressed (#4)** — the empty-episode/empty-action gap above is the one
+  finding in this category; otherwise the 83-test suite's coverage against the Research and Plan's
+  own enumerated hazard list is complete, confirmed by re-reading Step 3/Step 4's enumeration
+  against the actual test method names one more time.
+- **`concurrency`/`compose`/`navigation`/`di`/`gradle-kts` tracks** — correctly not assessed; this
+  module has no UI, no threading construct beyond a hand-rolled static singleton (out of scope for
+  this track, per the Plan's Out of Scope section), and no DI wiring.
+- **Milestone/scope creep (#9)** — `git diff --stat develop...HEAD` matches File Scope exactly (32
+  files); no edit outside the nine production files, nine new test files, and five doc/build files.
+  Extended the SpotBugs sweep to two modules (`:net:sync:service`, `:net:sync:gpoddernet`) no prior
+  stage's explicit list named, given how directly they subclass/implement the converted API — both
+  clean, so this is a verification-thoroughness note, not a scope finding.
+
+### Summary
+
+This is the most rigorously self-verified implementation in the case study to date, and independent
+re-verification at the bytecode level, the live-SpotBugs level, and the hand-computed-assertion
+level held up on every claim that could be checked. Re-running the full test suite, `:app:assembleDebug`,
+four consuming modules' tests, and `javap`-level checks against my own fresh build (not the prior
+stages' pasted output) reproduced every JVM-shape and behavioral claim exactly, including both fixes
+the plan's own red-team loop 1 forced in (the PLAY-gate third clause, the `Builder(FeedItem, Action)`
+null-`action` test), which I re-verified discriminating at the bytecode level via `Intrinsics` call
+inspection rather than re-running the developer's or reviewer's falsification script. I also extended
+the SpotBugs sweep to the two modules most directly coupled to the converted API
+(`:net:sync:service`, `:net:sync:gpoddernet`) that no prior stage's explicit check list named, given
+that Milestone 10 found a real finding in an analogous implementor — both came back clean. The two
+MINOR findings recorded above (a stale warning count in the Implementation Notes, and one
+low-probability coverage gap in the mandatory-field guard's characterization) do not reflect any
+actual behavioral divergence and do not block merge.
+
+**Milestone 11 is cleared for PR.** No further review stage is needed — proceed directly to opening
+the PR with the Plan section as the description, per the standing pipeline instruction.

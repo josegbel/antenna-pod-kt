@@ -4,7 +4,7 @@
 > **Task file:** `tasks/antennapod-net-sync-service-interface-kotlin.md`
 
 ## Status
-IMPLEMENTATION COMPLETE — all 13 Steps done on branch `kotlin/net-sync-service-interface` (12 commits: Steps 1, 2+3 combined, 4, 5, 6, 7, 8, 9, 10, 11, 12, and this docs commit for Step 13). Module is 9/9 Kotlin. 83/83 characterization tests green before and after every conversion step, zero test-file edits. Full verification matrix run (see task file Implementation Notes). Ready for `migration-code-reviewer`.
+RED-TEAM IMPLEMENTATION APPROVED (loop 1 of max 2) — `legacy-android-red-team` independently re-ran the 83-test suite, `:app:assembleDebug`, four consuming modules' tests, and `javap`-level bytecode checks against a fresh build (not prior stages' pasted output); disassembled the `Builder(FeedItem, Action)` constructor's `Intrinsics` calls by hand to confirm the plan's own red-team loop-1 fixes hold at the bytecode level; extended the SpotBugs sweep to two modules (`:net:sync:service`, `:net:sync:gpoddernet`) no prior stage's explicit check list named, given their direct coupling to the converted API — both clean. Two MINOR findings recorded (a stale warning count in Implementation Notes; a low-probability coverage gap in the mandatory-field guard's empty-episode/empty-action cases), neither blocking. See task file Red-Team Verdict (Implementation). **Milestone 11 is cleared for PR.**
 
 ## Last updated
 2026-07-28
@@ -14,8 +14,8 @@ IMPLEMENTATION COMPLETE — all 13 Steps done on branch `kotlin/net-sync-service
 - [x] Plan (legacy-android-planner)
 - [x] Red-team plan (legacy-android-red-team) — loop 1 CHALLENGE → planner revision → loop 2 APPROVE, see task file
 - [x] Implement (android-migration-developer) — all 13 Steps complete, see task file Implementation Notes
-- [ ] Code review (migration-code-reviewer)
-- [ ] Red-team implementation (legacy-android-red-team)
+- [x] Code review (migration-code-reviewer) — loop 1 APPROVE, see task file Code Review Verdict
+- [x] Red-team implementation (legacy-android-red-team) — loop 1 APPROVE, see task file Red-Team Verdict (Implementation)
 - [ ] PR opened
 
 ## Decisions for next session
@@ -66,7 +66,7 @@ Loop 1 CHALLENGE found: (1) CRITICAL — the PLAY-gate test pair discriminated `
 - **Interop width:** 7 dependent Gradle modules (2 more than M10), 28 referencing files, **all Java, zero Kotlin callers**. 22 `getInstance()` sites + 5 `setInstance()` sites (4 of them tests in *other* modules that install `SynchronizationQueueStub`).
 
 ## Resume command
-Research, Plan, and plan red-team (both loops) are complete in `tasks/antennapod-net-sync-service-interface-kotlin.md` (Plan = D0–D17, 13 Steps, File Scope of 5 modified + 9 renamed + 9 created files, AC1–AC18, plus OQ1–OQ3; Plan Revision 1 closed loop 1's findings; loop 2 = APPROVE). Implementation is **done** — see below. **Next: invoke `migration-code-reviewer`**, then `legacy-android-red-team` again for the implementation pass (fresh 2-loop budget, separate from the plan-review loops already used).
+Research, Plan, and plan red-team (both loops) are complete in `tasks/antennapod-net-sync-service-interface-kotlin.md` (Plan = D0–D17, 13 Steps, File Scope of 5 modified + 9 renamed + 9 created files, AC1–AC18, plus OQ1–OQ3; Plan Revision 1 closed loop 1's findings; loop 2 = APPROVE). Implementation is **done** — see below. Code review is **done** (loop 1 of max 3, APPROVE, zero findings — see task file Code Review Verdict). **Next: invoke `legacy-android-red-team` for the implementation pass** (fresh 2-loop budget, separate from the plan-review loops already used).
 
 ### Implementation summary (2026-07-28) — what the code reviewer / implementation red-team should look at
 
