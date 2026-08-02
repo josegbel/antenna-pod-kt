@@ -1,5 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.ktlint)
 }
 apply from: "../../../common.gradle"
 apply from: "../../../playFlavor.gradle"
@@ -32,4 +34,8 @@ dependencies {
     implementation libs.guava
 
     testImplementation libs.junit
+    // Disclosed, scoped exception to this repo's Robolectric-free precedent (kotlin milestone 11):
+    // SynchronizationQueueStorage and SynchronizationQueueImpl need real SharedPreferences and org.json,
+    // which are Android-framework stubs under plain JUnit. Do not broaden usage beyond those two test files.
+    testImplementation libs.robolectric
 }
