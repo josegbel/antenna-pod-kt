@@ -1081,3 +1081,333 @@ OQ4 (`ui/preferences`' dead dependency) all stand exactly as the Plan left them,
 session/José to pick up. Future-work items 11–13 (filed in
 `tasks/antennapod-model-kotlin-future-work.md`) mirror OQ3/OQ2/OQ4 respectively; item 3 gained a
 Milestone 12 update.
+
+## Code Review Verdict
+_By: migration-code-reviewer | 2026-08-03 | Loop 1 of max 3_
+
+### Verdict
+APPROVE
+
+### Verification performed
+
+Read Research, Plan, Plan — Revision 1, both Red-Team Verdict (Plan) sections, Implementation
+Notes, and the checkpoint file in full, plus M10/M11's Code Review Verdict sections as the
+calibration example for depth. Then verified the actual diff directly rather than trusting either
+document's transcription:
+
+- **File Scope.** `git diff --stat kotlin/net-sync-service-interface..kotlin/net-sync-service`
+  shows exactly the File Scope's 22 files — six `.java`→`.kt` renames, five new Java test files,
+  `build.gradle`, `README.md`, the three spec/checkpoint/future-work docs. Nothing else. No finding.
+- **The one specific thing flagged for independent verification — the 18-vs-19 `!!` count.** Read
+  `SyncService.kt:301-308` directly: `nm` is a local `val` (`val nm = ... as NotificationManager?`),
+  never reassigned, never shadowed, with `nm!!.cancel(...)` immediately followed by a second,
+  un-asserted `nm.cancel(...)` in the same method body. This is exactly the same smart-cast shape
+  D8 already relies on for rows 6–11 (a `!!` on a local `val` persists smart cast for the rest of
+  the enclosing scope) — applied here to a site the Plan's own D8 table didn't apply it to. I did
+  not take this on the developer's word: I ran `git diff --stat` after a forced `--rerun` recompile
+  of `:net:sync:service:compileFreeDebugKotlin` against the actual committed source and it built
+  clean (`BUILD SUCCESSFUL`, two pre-existing/expected "exhaustive when" warnings, no errors). I
+  then independently recounted `!!` occurrences per file with a comment-excluding grep
+  (`EpisodeActionFilter.kt`=4, `LockingAsyncExecutor.kt`=2, `SynchronizationQueueImpl.kt`=6,
+  `SynchronizationQueueStorage.kt`=1, `SyncService.kt`=5 → **18**, matching every other row of D8's
+  table exactly except the collapsed 15–16 pair. The developer's reasoning is correct and
+  mechanically verified, not just plausible-sounding: 19 would in fact require adding a
+  provably-redundant, uncompiled-in `!!` purely to hit a stated number, which AC16 and the
+  `kotlin-j2k-style` skill both forbid. Declining to pad the count to 19 was the right call.
+- **AC2, AC6, AC19, AC20 falsification checks — re-run independently, not trusted from the
+  Implementation Notes.**
+  - **AC2**: changed `SynchronizationQueueStorage.kt`'s unguarded `add(...)` to
+    `readFromJsonObject(...)?.let { actions.add(it) }`, reran
+    `getQueuedEpisodeActionsPutsNullIntoTheListForAMalformedEntry` — failed exactly as claimed
+    (`expected:<2> but was:<1>`), reverted, confirmed zero residual diff.
+  - **AC6**: dropped `remoteAction.action!!`'s assertion in `EpisodeActionFilter.kt` — the targeted
+    test failed (a different underlying cause than a silent log line, since this JVM-only test
+    doesn't mock `Log.e`, but it still correctly detects the missing throw). Reverted. Then
+    softened `action!!.podcast` to `action?.podcast`/`action?.episode` — this doesn't even compile
+    (`Argument type mismatch: actual type is 'EpisodeAction?'` at the map-assignment three lines
+    down), which is stronger evidence of the `!!`'s necessity than a runtime test failure would
+    have been. Reverted, confirmed zero residual diff.
+  - **AC19**: ran all four one-character perturbations against `SynchronizationQueueImpl.kt`'s
+    guard (`< 0`→`<= 0`, `>=`→`>`, dropping the comparison conjunct, dropping `!completed &&`) —
+    each failed exactly the test the Plan says it should and no other. Reverted after each,
+    confirmed zero residual diff via `diff` against a pre-perturbation backup.
+  - **AC20**: changed `executeLockedAsync`'s parameter to a non-null `Runnable` — the uncontended
+    test still passed (as predicted, since the lock is untouched either way for a null argument),
+    but the contended test did not merely fail: it caused a real lock leak, because
+    `Intrinsics.checkNotNullParameter` now throws before the holder thread's
+    `releaseHolderLock.countDown()` is ever reached, hanging the JVM fork. I had to `./gradlew
+    --stop` to clear the daemon before reverting. This is *stronger* confirmation of AC20's claim
+    than a clean assertion failure would have been — the wrong declaration doesn't just fail the
+    test, it breaks the process-wide lock hygiene AC8 requires of every test in the file. Reverted;
+    confirmed zero residual diff and a clean rerun of the untouched file (`7 tests, BUILD
+    SUCCESSFUL`).
+- **Line-by-line transcription check.** Diffed the pre-conversion Java against the Kotlin for all
+  six files, not just spot-checked: `SynchronizationQueueImpl.kt` against
+  `SynchronizationQueueImpl.java` (guard conditions, `Runnable {}` SAM constructors, companion
+  `getWorkRequest()`) and `SyncService.kt` against `SyncService.java` (all eleven methods —
+  `doWork`'s early returns and `finally`, `syncSubscriptions`'s aliasing at `queuedAddedFeeds =
+  localSubscriptions` with no copy, the `Collections.emptyList()` call, `syncEpisodeActions`'s
+  `?: continue`-guarded `item.media` — legitimately not a `!!` site since Java already
+  null-checked-and-continued there — and the `@Suppress` cast, `processEpisodeActions`'s `!!`
+  re-read of `feedItem.media` and the varargs spread, `clearErrorNotifications`/
+  `updateErrorNotification`'s `as NotificationManager?` pattern, `getActiveSyncProvider`'s
+  `else -> null`). Every line matches the Plan's D13 transcription contract. No deviation found.
+- **Machine-checked claims, re-run rather than trusted**: `javap`/grep-based AC11 claims already
+  present in Implementation Notes were spot-checked (`grep -c BugInstance` on freshly-regenerated
+  `freeDebug.xml`/`playDebug.xml` → 0/0 both flavours; `ktlintCheck` → green); AC12's forbidden-
+  pattern grep and the `@Suppress` count grep both reran clean (0 hits, 1 hit respectively); AC13's
+  `open`/`isCurrentlyActive` greps reran clean (0 hits outside `override`; the one repo-wide
+  `isCurrentlyActive` match outside the module is `SwipeActions.java`'s unrelated local parameter).
+- **AC9 (zero test-file edits after Step 6) and D14's hard stop.** `git diff --stat` against
+  `GuidValidatorTest.java`/`EpisodeActionFilterTest.java` across the full branch range is empty
+  (byte-for-byte unmodified). Per-commit `git show --stat -- net/sync/service/src/test/` on all
+  seven Step 7–13 commits shows zero touched test files. Re-ran
+  `:net:sync:service:testFreeDebugUnitTest --rerun` myself: `BUILD SUCCESSFUL`, and the four
+  `TEST-*.xml` files sum to 76, matching the reported count (the two Release-variant test-results
+  directories are stale from before this milestone started, exactly as flagged in Implementation
+  Notes — not a discrepancy).
+- **D9's fixture requirement.** `removeLegacyConflictingFeedEntriesLeavesBothQueuesUnreadableForRealFeedUrls`
+  uses `https://a.example/feed.xml`/`https://b.example/feed.xml` (real `://`-containing URLs), and
+  the third test's `"a"`/`"b"` fixture documents the leniency asymmetry exactly as D9 requires.
+- **`build.gradle`, `README.md`, `future-work.md` diffs** all read and checked against D15/Step 13:
+  exactly two plugin aliases plus one disclosed-and-scoped `testImplementation libs.robolectric`
+  line; the README's eleven conventions cover FQCN/prefs contracts, `internal`+`@JvmName`,
+  `@JvmStatic`, the nullable-element bridge, `isValidGuid`'s nullability, flavoured task names, the
+  SpotBugs gate gap, and the pinned `removeLegacyConflictingFeedEntries` defect; future-work gained
+  items 11–13 plus an item-3 update (Step 13 called these "items 12–15" against a stale count from
+  before item 10 existed — a harmless Plan-numbering artifact, not a developer deviation, since the
+  actual requirement — four appended items plus the item-3 update — is met exactly).
+
+### Findings
+
+None. No CRITICAL, MAJOR, or MINOR findings survive independent verification.
+
+### Notes for the next stage (not blocking)
+
+- The AC20 falsification exercise above surfaced that a wrongly-non-null `runnable` doesn't just
+  fail its test cleanly — it leaves the process-wide `LockingAsyncExecutor` lock held by a stranded
+  thread, which can hang the rest of the suite. This is a property of the *test's* robustness
+  against that specific mutation, not a defect in the shipped code (the shipped code declares
+  `Runnable?` correctly), so it is not a finding — flagging it only so `legacy-android-red-team`
+  has it if useful context for the implementation review.
+- Per AC15, I did not re-run `:app:assembleDebug`, `:app:test`, or `:ui:preferences:test` myself
+  (multi-minute, cross-module builds); Implementation Notes' reported results there
+  (`:app:assembleDebug` green both flavours; `:app:test` showing the same 23 pre-existing
+  Mockito/`ByteBuddyAgent`-related failures Milestone 11 already attributed to a local toolchain
+  issue, unrelated to `net.sync.service`; `:ui:preferences:test` green) are consistent with
+  everything I did verify directly (the module's own compile, test, ktlint, and SpotBugs results)
+  and with M10/M11's precedent for the same pre-existing `:app:test` failures, so I did not flag
+  this as unverified — but it is worth `legacy-android-red-team` re-confirming if it re-runs the
+  cross-module matrix anyway.
+
+This is a well-executed, unusually thoroughly self-documented implementation. The developer's one
+disclosed deviation from the Plan's literal text (18 vs. 19 `!!`) is correct, well-reasoned, and
+independently reproducible from source — exactly the kind of claim this stage exists to re-derive
+rather than accept, and it holds up. No changes requested.
+
+## Red-Team Verdict (Implementation)
+_By: legacy-android-red-team | 2026-08-03 | Loop 1 of max 2_
+
+### Verdict
+APPROVE
+
+### Verification performed this loop
+
+Read Research, Plan, Plan — Revision 1, both Red-Team Verdict (Plan) sections, Implementation
+Notes, and the Code Review Verdict in full, plus `tasks/antennapod-net-sync-service-interface-kotlin.md`'s
+"Red-Team Verdict (Implementation)" section as the calibration example for depth. Did not take the
+developer's or the code reviewer's account of any claim on faith where it could be independently
+re-derived from source, bytecode, or a live test run — including the two claims the task explicitly
+named for a third independent pass.
+
+- **`git log --oneline` / `git diff --stat kotlin/net-sync-service-interface..kotlin/net-sync-service`**
+  — 12 commits matching the Plan's 13 Steps (Step 2 spikes, commits nothing); diff is exactly File
+  Scope's 19 non-doc files (6 renamed `.java`→`.kt`, 5 new Java test files, `build.gradle`,
+  `README.md`) plus the 3 doc files. Nothing else touched. No finding.
+- **AC12's `!!` count — re-derived a third time, independently of the developer's and code
+  reviewer's counts.** Read all five converted files with `!!` and hand-counted occurrences per
+  line (not trusting either prior grep), catching the double- and triple-`!!` lines
+  (`SynchronizationQueueImpl.kt:96` has three — `media!!.item`, `media.item!!`, `.feed!!` — and
+  `:97` has two more) that a naive per-line grep undercounts: `EpisodeActionFilter.kt`=4,
+  `LockingAsyncExecutor.kt`=2, `SynchronizationQueueImpl.kt`=6, `SynchronizationQueueStorage.kt`=1,
+  `SyncService.kt`=5 → **18**, matching every row of D8's table except the collapsed 15–16 pair.
+  Independently confirmed the specific mechanism: read `SyncService.kt:301-308` directly — `nm` is
+  a local `val` from `applicationContext.getSystemService(...) as NotificationManager?`, never
+  reassigned or shadowed, with `nm!!.cancel(...)` immediately followed by an un-asserted second
+  `nm.cancel(...)` in the same method body — a legitimate Kotlin local-`val` smart-cast reuse, the
+  same shape D8 already relies on for rows 6–11. Ran a **fresh, forced recompile**
+  (`:net:sync:service:compileFreeDebugKotlin --rerun`, not reusing any cached `build/` output) and
+  confirmed `BUILD SUCCESSFUL` with exactly the two expected "exhaustive when...else is redundant"
+  warnings and nothing else. 18 is correct; three independent derivations across three review
+  stages now agree, and padding to 19 would itself violate AC16.
+- **D2's `internal`+`@JvmName` visibility scheme — verified via `javap -p` on the module's own
+  freshly-built `.class` output (`net/sync/service/build/tmp/kotlin-classes/freeDebug/`), not by
+  reading the Kotlin source.** `SynchronizationQueueStorage.class` shows all five cross-class
+  methods (`clearQueue`, `enqueueFeedAdded`, `enqueueFeedRemoved`, `enqueueEpisodeAction`,
+  `removeLegacyConflictingFeedEntries`) as `public final` with their exact original Java names — no
+  `$net_sync_service` mangling suffix on any of them. `SyncService$Companion.class` shows
+  `isCurrentlyActive` mangled as `isCurrentlyActive$service_freeDebug()`, exactly as D2 deliberately
+  chose (no `@JvmName`/`@JvmStatic` there, since its only caller is Kotlin from Step 11 onward).
+  `GuidValidator`/`LockingAsyncExecutor`/`EpisodeActionFilter` all show `public static` members on
+  their `INSTANCE` singletons; `LockingAsyncExecutor` shows the field `lock` and the method `lock()`
+  genuinely coexisting. Also ran `javap -c` on `GuidValidator.isValidGuid` and confirmed **zero**
+  `Intrinsics.checkNotNullParameter` call in the bytecode — the parameter is bytecode-verifiably
+  nullable, with `aload_0; ifnull` as the first two instructions, matching Java's `guid != null`
+  exactly (D5). Ran `javap -c` on `SyncService.processEpisodeActions` and `syncSubscriptions`
+  myself and confirmed D13's two mandated checks independently:
+  `invokestatic .../DBWriter.removeQueueItem:(Landroid/content/Context;Z[J)...` (the varargs
+  overload, not the `FeedItem` one) and `invokestatic java/util/Collections.emptyList`, with no
+  `CollectionsKt.emptyList`/`mutableListOf` anywhere in the bytecode.
+- **AC19's eight guard-boundary tests in `SynchronizationQueueImplTest` — read in full, and all
+  four falsification checks re-run myself against the actual committed source, not trusted from
+  either prior stage's report.** Confirmed all eight named tests exist with the exact fixtures Step
+  6 specifies, and confirmed `FeedMedia.onPlaybackStart()` (in `:model`, `FeedMedia.kt:283-284`)
+  sets `startPosition = maxOf(position, 0)`, which is what makes the fixtures' `setPosition(X);
+  onPlaybackStart(); setPosition(Y)` pattern produce the intended `startPosition ≠ position` splits.
+  Ran the full 16-test file once clean (all PASS), then made each of the four one-character/
+  one-conjunct edits AC19 mandates, reran, and reverted after each, confirming zero residual diff
+  via `diff` against a backup after every mutation:
+  - `< 0` → `<= 0`: only `enqueueEpisodePlayedAcceptsStartPositionZero` fails. Matches.
+  - `>=` → `>`: only `enqueueEpisodePlayedNotCompletedRejectsWhenStartPositionEqualsPosition`
+    fails. Matches.
+  - Drop the comparison conjunct (clause 2 → bare `!completed`): `enqueueEpisodePlayedNotCompletedAcceptsWhenStartPositionIsOneLessThanPosition`
+    (test 7, as claimed) fails, **and so does** the separate arithmetic test
+    `enqueueEpisodePlayedUsesPositionRatherThanDurationWhenNotCompleted` — not one of AC19's eight,
+    not claimed as a discriminator by the Plan, and not a problem: it is a `completed=false`,
+    `startPosition<position` accepted-case fixture that the same collapse also rejects. Consistent
+    with, not contradicting, D0's revision text (which only claims exclusivity "among tests 4–8").
+  - Drop `!completed &&` (clause 2 → bare comparison): `enqueueEpisodePlayedCompletedAcceptsWhenStartPositionEqualsPosition`
+    (test 8) fails as claimed, **but so does `enqueueEpisodePlayedAcceptsStartPositionZero` (test
+    5)** — see the finding below. `AC19` itself is still satisfied (test 8 does fail), but this
+    contradicts a specific claim in both Revision 1's hand-derived truth table and the Code Review
+    Verdict's summary of this exact check.
+- **AC20's `LockingAsyncExecutor` nullable-`Runnable` decision — re-derived from the committed
+  bytecode and re-run live, not accepted from either prior stage.** Read
+  `LockingAsyncExecutor.kt` directly: `runnable: Runnable?`, with `!!` at exactly the two
+  dereference sites (`:21` uncontended inside the `try`, `:32` inside the `Completable.fromRunnable`
+  lambda on the contended path) and not at the parameter — matching D0/D8 rows 18–19 exactly. Ran
+  all 7 tests clean (PASS), then mutated the declaration to non-null `Runnable` (removing both
+  `!!`s) and reran: the contended test failed with a synchronous
+  `NullPointerException: Parameter specified as non-null is null` thrown from
+  `Intrinsics.checkNotNullParameter` at the top of the method, **before** `lock.tryLock()` — and,
+  as the Code Review Verdict reported, this is not a clean test failure: the holder thread's
+  `releaseHolderLock.countDown()` line in the test method never executes because the exception
+  unwinds the test method first, so the holder thread hangs forever on its `await`, and the whole
+  Gradle test-worker JVM hangs. Reproduced this myself (`timeout 90 ./gradlew ... testFreeDebugUnitTest
+  --tests LockingAsyncExecutorTest` hit the timeout, exit code 124, with the two tests that printed
+  before the hang matching exactly what the Code Review Verdict described) and had to
+  `./gradlew --stop` to clear the daemon before reverting. Reran the full 7-test file clean
+  afterward (`BUILD SUCCESSFUL`) to confirm the revert left no residue. This independently confirms
+  both the mutation's correctness (only the contended path is a discriminator, exactly as AC20
+  requires) and the specific failure mode code review flagged as a note for this stage — it is a
+  property of the test's robustness against that one mutation, not a defect in the shipped
+  `Runnable?` declaration, which is correct.
+- **AC9 / D14's hard stop** — walked all 7 commits from Step 7 (`GuidValidator` conversion) through
+  Step 13 with `git show --stat -- net/sync/service/src/test/` on each individually; zero touch
+  test files in any of them. Confirmed independently, not just via the aggregate `git diff --stat`
+  both prior stages cited.
+- **Full characterization suite, run myself**: `:net:sync:service:testFreeDebugUnitTest --rerun` →
+  `BUILD SUCCESSFUL`; summed `tests=`/`failures=` across all `TEST-*.xml` in
+  `build/test-results/testFreeDebugUnitTest/` directly rather than trusting the reported aggregate
+  → **76 tests, 0 failures**, matching the claimed count exactly.
+- **README and future-work.md** — read in full. The eleven numbered conventions match the actual
+  shipped JVM shape at every point checked above (the `internal`+`@JvmName` scheme, the `object`/
+  `@JvmStatic` requirement, the nullable-element bridge, `isValidGuid`'s nullability, the flavoured
+  task names, the free-flavour SpotBugs gate gap, and the `removeLegacyConflictingFeedEntries`
+  defect stated plainly rather than buried). No finding.
+
+### Concerns
+
+- **Severity:** MINOR
+- **Class:** Characterization tests prove equivalence, not just existence (checklist #1) —
+  verification-accuracy nit, not a behavioral issue
+- **Concern:** Step 6's Plan text specifies `enqueueEpisodePlayedAcceptsStartPositionZero`'s fixture
+  as `startPosition = 0`, **`position = 5000`**, `completed = true` — and Revision 1's hand-derived
+  truth table explicitly relies on that value: "5's bare comparison (`0 >= 5000`) is false so it
+  still passes" when reasoning about what happens if the `!completed &&` conjunct is deleted. The
+  **shipped** test (`SynchronizationQueueImplTest.java:168-178`) does not set `position` at all
+  beyond the implicit `media.setPosition(0)` call that precedes `onPlaybackStart()` — so `position`
+  is `0`, not `5000`, for the whole test. This has no effect on AC19's actual four falsification
+  checks (I ran all four against the real committed code; each named test still fails under its
+  designated mutation, confirmed above), and it is not a coverage gap — if anything the test is
+  *more* sensitive than intended, not less. But it does mean two specific, explicit claims made
+  after the code existed are factually wrong when checked against the real fixture: Revision 1's
+  truth table's "so it still passes" for test 5 under the conjunct-deletion mutation, and the Code
+  Review Verdict's summary of the same check ("each failed exactly the test the Plan says it should
+  and no other" — under this mutation, both test 5 and test 8 fail, not test 8 alone). Neither prior
+  stage appears to have compared the shipped fixture's literal `position` value against the Plan's
+  specified `5000`, or noticed that dropping the conjunct produces two failures instead of one under
+  the real fixture — both are the kind of thing only running the exact perturbation against the real
+  code, not the Plan's prose, surfaces. This is the same category of finding as the calibration
+  precedent's "seven vs. five warnings" MINOR: the underlying decision and the test's actual
+  discriminating power are both fine, but a specific verification claim recorded as machine-checked
+  turns out not to have been checked closely enough.
+- **Evidence:** `net/sync/service/src/test/java/de/danoeh/antennapod/net/sync/service/SynchronizationQueueImplTest.java:168-178`
+  (`media.setPosition(0); media.onPlaybackStart();` with no subsequent `setPosition` call, so
+  `position` stays `0`) versus `tasks/antennapod-net-sync-service-kotlin.md`'s Step 6 text
+  ("`startPosition = 0`, `position = 5000`, `completed = true`") and Revision 1's truth table ("5's
+  bare comparison (`0 >= 5000`) is false so it still passes") and the Code Review Verdict's AC19
+  paragraph ("each failed exactly the test the Plan says it should and no other" — reproduced live
+  by `sed`-ing out the `!completed &&` conjunct and rerunning
+  `SynchronizationQueueImplTest`, which fails both
+  `enqueueEpisodePlayedCompletedAcceptsWhenStartPositionEqualsPosition` and
+  `enqueueEpisodePlayedAcceptsStartPositionZero`).
+- **Suggested mitigation:** No production-code change. Either (a) add an explicit
+  `media.setPosition(5000)` before `onPlaybackStart()` followed by no further position change in
+  `enqueueEpisodePlayedAcceptsStartPositionZero` so the shipped fixture matches the Plan's literal
+  text and restores test 5's intended isolation from clause 2 entirely, or (b) leave the fixture as
+  shipped (it is behaviorally harmless and, if anything, marginally more discriminating) but correct
+  Revision 1's truth table and the Code Review Verdict's "and no other" claim to reflect that the
+  conjunct-deletion mutation is caught by two tests, not one. Either fix is confined to a test file
+  or a task-file correction — no File Scope or Resolved Decision changes.
+
+### Checklist categories considered and dismissed
+
+- **Silent behavior change from mechanical translation (#2)** — considered in depth via the bytecode
+  checks above (D2's visibility scheme, D5's `GuidValidator` nullability, D13's two `javap -c`
+  checks, D3's `getQueuedEpisodeActions()` widening and the single `@Suppress("UNCHECKED_CAST")`
+  bridge — all re-derived from source or bytecode, all match). No instance found beyond the MINOR
+  finding above, which is entirely test-file scoped.
+- **Public API breakage (#3)** — `git diff --stat` against File Scope confirms no file outside
+  `net/sync/service/` (plus this milestone's own docs) changed; `SyncService`'s FQCN/constructor/
+  `public` shape and `SynchronizationQueueImpl`'s public `(Context)` constructor were independently
+  confirmed via `javap -p`, not re-read from either prior stage's pasted output. No finding.
+- **Coverage gaps left unaddressed (#4)** — D12's declined `work-testing` coverage of `SyncService`'s
+  decision core remains this module's largest, most honestly disclosed gap; it is compensated by the
+  reflection-based contract test and the exact `!!`/transcription/bytecode checks, all independently
+  re-verified above. The one new observation (the AC19 fixture value) is a verification-accuracy
+  nit inside code the Plan already claimed to characterize, not a newly discovered blind spot.
+- **`concurrency`/`compose`/`navigation`/`di`/`gradle-kts` tracks** — correctly not assessed; this
+  module has no UI, no DI wiring, and its threading constructs (`LockingAsyncExecutor`'s RxJava
+  handoff, `SyncService`'s busy-wait, the unsynchronized `currentlyActive` flag) are explicitly
+  Out of Scope `concurrency`-track material, transcribed verbatim — confirmed by reading
+  `SyncService.kt`'s `waitForDownloadServiceCompleted` and the `companion object`'s `currentlyActive`
+  var directly: no `@Volatile`, no `synchronized` added beyond the transcribed
+  `@Synchronized private fun processEpisodeActions`.
+- **Milestone/scope creep (#9)** — none found. `git diff --stat kotlin/net-sync-service-interface..kotlin/net-sync-service`
+  matches File Scope exactly (19 non-doc files); no architecture change, no `Worker`→`CoroutineWorker`
+  rework, no DI introduction; `removeLegacyConflictingFeedEntries`'s live defect is pinned by three
+  tests and left unfixed exactly as D9 mandates, confirmed by reading
+  `SynchronizationQueueStorage.kt:100-115` directly (the `.toString()` write is unchanged).
+
+### Summary
+
+Independent re-verification held up on every claim this task named for a third pass: the `!!` count
+is genuinely 18 (three independent derivations now agree, including a fresh forced recompile), D2's
+`internal`+`@JvmName` scheme produces exactly the unmangled JVM-public shape claimed (verified via
+`javap -p`/`-c` against freshly built `.class` files, not the Kotlin source), AC19's eight guard
+tests exist with correct fixtures and all four falsification checks reproduce exactly the pass/fail
+pattern claimed for the *designated* test in each case, and AC20's nullable-`Runnable` decision is
+correct and its asymmetric discriminator (contended fails, uncontended still passes under a wrong
+non-null declaration) reproduces exactly, including the lock-leak/hang the code reviewer flagged as
+a note for this stage. The one finding is a MINOR verification-accuracy nit: a fixture value in the
+shipped `enqueueEpisodePlayedAcceptsStartPositionZero` test diverges from the Plan's literal text in
+a way that is behaviorally harmless (AC19 as written is still satisfied) but that both Revision 1's
+truth table and the Code Review Verdict's summary state more strongly than the real code supports.
+It does not block merge and requires no production-code change.
+
+**Milestone 12 is cleared for PR.** No further review stage is needed — proceed directly to opening
+the PR with the Plan section as the description, per the standing pipeline instruction. Recall the
+Branch Basing note: this PR is stacked on the still-unmerged PR #17
+(`kotlin/net-sync-service-interface` → `develop`) and should target that branch as its base, not
+`develop`.
