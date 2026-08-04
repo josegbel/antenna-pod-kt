@@ -1,139 +1,143 @@
-package de.danoeh.antennapod.net.download.serviceinterface;
+package de.danoeh.antennapod.net.download.serviceinterface
 
-import de.danoeh.antennapod.model.download.DownloadRequest;
-import de.danoeh.antennapod.model.feed.Feed;
-import de.danoeh.antennapod.model.feed.FeedItem;
-import de.danoeh.antennapod.model.feed.FeedMedia;
+import de.danoeh.antennapod.model.download.DownloadRequest
+import de.danoeh.antennapod.model.feed.Feed
+import de.danoeh.antennapod.model.feed.FeedItem
+import de.danoeh.antennapod.model.feed.FeedMedia
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
+@RunWith(RobolectricTestRunner::class)
+class DownloadRequestBuilderCharacterizationTest {
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertThrows;
-
-@RunWith(RobolectricTestRunner.class)
-public class DownloadRequestBuilderCharacterizationTest {
-
-    private static final String DEST = "file://location/media.mp3";
-
-    private Feed createFeed(long id, String downloadUrl, String title) {
-        return new Feed(id, null, title, null, null, null, null, null, null, null, null, null, downloadUrl, 0);
+    private fun createFeed(id: Long, downloadUrl: String?, title: String?): Feed {
+        return Feed(id, null, title, null, null, null, null, null, null, null, null, null, downloadUrl, 0)
     }
 
-    private FeedMedia createMedia(long id, String downloadUrl) {
-        FeedItem item = new FeedItem(id, "Media Title", null, null, null, FeedItem.UNPLAYED, null);
-        return new FeedMedia(id, item, 0, 0, 0, "audio/mpeg", null, downloadUrl, 0, null, 0, 0);
+    private fun createMedia(id: Long, downloadUrl: String?): FeedMedia {
+        val item = FeedItem(id, "Media Title", null, null, null, FeedItem.UNPLAYED, null)
+        return FeedMedia(id, item, 0, 0, 0, "audio/mpeg", null, downloadUrl, 0, null, 0, 0)
     }
 
     @Test
-    public void feedConstructorSkipsPrepareUrlForLocalFeed() {
-        Feed feed = createFeed(1, Feed.PREFIX_LOCAL_FOLDER + "some/path", "Local Podcast");
+    fun feedConstructorSkipsPrepareUrlForLocalFeed() {
+        val feed = createFeed(1, Feed.PREFIX_LOCAL_FOLDER + "some/path", "Local Podcast")
 
-        DownloadRequest built = new DownloadRequestBuilder(DEST, feed).build();
+        val built = DownloadRequestBuilder(DEST, feed).build()
 
-        assertEquals(feed.getDownloadUrl(), built.getSource());
+        assertEquals(feed.downloadUrl, built.source)
     }
 
     @Test
-    public void feedConstructorAppliesPrepareUrlForNonLocalFeed() {
-        Feed feed = createFeed(2, "example.com/feed2.xml", "Podcast Two");
+    fun feedConstructorAppliesPrepareUrlForNonLocalFeed() {
+        val feed = createFeed(2, "example.com/feed2.xml", "Podcast Two")
 
-        DownloadRequest built = new DownloadRequestBuilder(DEST, feed).build();
+        val built = DownloadRequestBuilder(DEST, feed).build()
 
-        assertEquals("http://example.com/feed2.xml", built.getSource());
+        assertEquals("http://example.com/feed2.xml", built.source)
     }
 
     @Test
-    public void feedConstructorSetsPageNrArgument() {
-        Feed feed = createFeed(3, "http://example.com/feed3.xml", "Podcast Three");
-        feed.setPageNr(3);
+    fun feedConstructorSetsPageNrArgument() {
+        val feed = createFeed(3, "http://example.com/feed3.xml", "Podcast Three")
+        feed.pageNr = 3
 
-        DownloadRequest built = new DownloadRequestBuilder(DEST, feed).build();
+        val built = DownloadRequestBuilder(DEST, feed).build()
 
-        assertEquals(3, built.getArguments().getInt(DownloadRequest.REQUEST_ARG_PAGE_NR));
+        assertEquals(3, built.arguments.getInt(DownloadRequest.REQUEST_ARG_PAGE_NR))
     }
 
     @Test
-    public void mediaConstructorAppliesPrepareUrl() {
-        FeedMedia media = createMedia(4, "example.com/episode4.mp3");
+    fun mediaConstructorAppliesPrepareUrl() {
+        val media = createMedia(4, "example.com/episode4.mp3")
 
-        DownloadRequest built = new DownloadRequestBuilder(DEST, media).build();
+        val built = DownloadRequestBuilder(DEST, media).build()
 
-        assertEquals("http://example.com/episode4.mp3", built.getSource());
+        assertEquals("http://example.com/episode4.mp3", built.source)
     }
 
     @Test
-    public void withInitiatedByUserFalseIsReflectedInBuiltRequest() {
-        FeedMedia media = createMedia(5, "http://example.com/episode5.mp3");
-        DownloadRequest built = new DownloadRequestBuilder(DEST, media).withInitiatedByUser(false).build();
+    fun withInitiatedByUserFalseIsReflectedInBuiltRequest() {
+        val media = createMedia(5, "http://example.com/episode5.mp3")
+        val built = DownloadRequestBuilder(DEST, media).withInitiatedByUser(false).build()
 
-        DownloadRequest ifInitiatedByUserWereTrue = new DownloadRequest(built.getDestination(), built.getSource(),
-                built.getTitle(), built.getFeedfileId(), built.getFeedfileType(), built.getLastModified(),
-                built.getUsername(), built.getPassword(), false, built.getArguments(), true);
+        val ifInitiatedByUserWereTrue = DownloadRequest(
+            built.destination, built.source,
+            built.title, built.feedfileId, built.feedfileType, built.lastModified,
+            built.username, built.password, false, built.arguments, true
+        )
 
-        assertNotEquals(built, ifInitiatedByUserWereTrue);
+        assertNotEquals(built, ifInitiatedByUserWereTrue)
     }
 
     @Test
-    public void buildHasMediaEnqueuedFalse() {
-        FeedMedia media = createMedia(6, "http://example.com/episode6.mp3");
-        DownloadRequest built = new DownloadRequestBuilder(DEST, media).build();
+    fun buildHasMediaEnqueuedFalse() {
+        val media = createMedia(6, "http://example.com/episode6.mp3")
+        val built = DownloadRequestBuilder(DEST, media).build()
 
-        DownloadRequest ifMediaEnqueuedWereTrue = new DownloadRequest(built.getDestination(), built.getSource(),
-                built.getTitle(), built.getFeedfileId(), built.getFeedfileType(), built.getLastModified(),
-                built.getUsername(), built.getPassword(), true, built.getArguments(), true);
+        val ifMediaEnqueuedWereTrue = DownloadRequest(
+            built.destination, built.source,
+            built.title, built.feedfileId, built.feedfileType, built.lastModified,
+            built.username, built.password, true, built.arguments, true
+        )
 
-        assertNotEquals(built, ifMediaEnqueuedWereTrue);
+        assertNotEquals(built, ifMediaEnqueuedWereTrue)
     }
 
     @Test
-    public void setSourceOverridesConstructorDerivedSource() {
-        FeedMedia media = createMedia(7, "http://example.com/episode7.mp3");
-        DownloadRequestBuilder builder = new DownloadRequestBuilder(DEST, media);
+    fun setSourceOverridesConstructorDerivedSource() {
+        val media = createMedia(7, "http://example.com/episode7.mp3")
+        val builder = DownloadRequestBuilder(DEST, media)
 
-        builder.setSource("http://example.com/replaced.mp3");
+        builder.setSource("http://example.com/replaced.mp3")
 
-        assertEquals("http://example.com/replaced.mp3", builder.build().getSource());
+        assertEquals("http://example.com/replaced.mp3", builder.build().source)
     }
 
     @Test
-    public void setForceTrueClearsLastModified() {
-        FeedMedia media = createMedia(8, "http://example.com/episode8.mp3");
-        DownloadRequestBuilder builder = new DownloadRequestBuilder(DEST, media).lastModified("etag-1");
+    fun setForceTrueClearsLastModified() {
+        val media = createMedia(8, "http://example.com/episode8.mp3")
+        val builder = DownloadRequestBuilder(DEST, media).lastModified("etag-1")
 
-        builder.setForce(true);
+        builder.setForce(true)
 
-        assertNull(builder.build().getLastModified());
+        assertNull(builder.build().lastModified)
     }
 
     @Test
-    public void setForceFalseLeavesLastModifiedUnchanged() {
-        FeedMedia media = createMedia(9, "http://example.com/episode9.mp3");
-        DownloadRequestBuilder builder = new DownloadRequestBuilder(DEST, media).lastModified("etag-1");
+    fun setForceFalseLeavesLastModifiedUnchanged() {
+        val media = createMedia(9, "http://example.com/episode9.mp3")
+        val builder = DownloadRequestBuilder(DEST, media).lastModified("etag-1")
 
-        builder.setForce(false);
+        builder.setForce(false)
 
-        assertEquals("etag-1", builder.build().getLastModified());
+        assertEquals("etag-1", builder.build().lastModified)
     }
 
     @Test
-    public void lastModifiedSetsBuiltRequestsLastModified() {
-        FeedMedia media = createMedia(10, "http://example.com/episode10.mp3");
+    fun lastModifiedSetsBuiltRequestsLastModified() {
+        val media = createMedia(10, "http://example.com/episode10.mp3")
 
-        DownloadRequest built = new DownloadRequestBuilder(DEST, media).lastModified("etag-2").build();
+        val built = DownloadRequestBuilder(DEST, media).lastModified("etag-2").build()
 
-        assertEquals("etag-2", built.getLastModified());
+        assertEquals("etag-2", built.lastModified)
     }
 
     @Test
-    public void buildWithNullSourceThrowsNpe() {
-        FeedMedia media = createMedia(11, "http://example.com/episode11.mp3");
-        DownloadRequestBuilder builder = new DownloadRequestBuilder(DEST, media);
-        builder.setSource(null);
+    fun buildWithNullSourceThrowsNpe() {
+        val media = createMedia(11, "http://example.com/episode11.mp3")
+        val builder = DownloadRequestBuilder(DEST, media)
+        builder.setSource(null)
 
-        assertThrows(NullPointerException.class, builder::build);
+        assertThrows(NullPointerException::class.java, builder::build)
+    }
+
+    private companion object {
+        private const val DEST = "file://location/media.mp3"
     }
 }
