@@ -33,6 +33,8 @@ Once `:model`'s last Java test file converts to Kotlin, `compileDebugUnitTestJav
 
 **Update, 2026-08-02 (`:net:sync:service` kotlin milestone, Milestone 12):** same gap, fifth production module (sixth counting `:net:sync:service-interface`). `compileFreeDebugJavaWithJavac`/`compilePlayDebugJavaWithJavac` go `NO-SOURCE` as of Step 12 (6/6 files converted); its five-file characterization suite is deliberately kept Java (D10, the same equivalence-oracle rationale as every prior milestone — see `tasks/antennapod-net-sync-service-kotlin.md`), and the two pre-existing test files (`GuidValidatorTest`, `EpisodeActionFilterTest`) stay Java too, so `-Xlint:all -Werror` still covers this module's entire test source set today. This is the first module in the case study where the equivalence oracle is entirely self-hosted — no other module's compile or test suite contributes any evidence — which makes keeping the test suite Java (and therefore keeping it under `-Xlint:all -Werror`'s coverage) more load-bearing here than in any prior milestone, not less.
 
+**Update, 2026-08-04 (`:net:download:service-interface` kotlin milestone, Milestone 13):** this milestone converted the module's six-file characterization suite to Kotlin — unlike `:event` and `:net:sync:service`, no file is held back in Java (the module's own scoping decision, recorded in that milestone's Plan). `compileFreeDebugUnitTestJavaWithJavac`/`compilePlayDebugUnitTestJavaWithJavac` go `NO-SOURCE` as of this milestone's final step. Combined with production going `NO-SOURCE` at the module's prior production-conversion milestone, `-Xlint:all -Werror` now covers nothing in this module at all — production or test. This is the third module in the case study in that state, after `:model` and `:net:sync:service-interface`.
+
 ### 4. Stale Robolectric comment in `model/build.gradle`
 **Raised:** 2026-07-25, during Milestone 7 planning.
 **Status:** Deferred — one-line fix, not worth widening File Scope for.
@@ -126,6 +128,14 @@ Four independent, low-stakes items bundled here:
 - `ui/preferences/build.gradle` declares `implementation project(':net:sync:service')`, but nothing in that module imports the `net.sync.service` package — its only `SyncService`-shaped reference is `de.danoeh.antennapod.event.SyncServiceEvent`, which comes from `:event`. This one is different in kind from the other three: removing it is a one-line edit to **another module's** build file, which is why Milestone 12 did not touch it — doing so would have broken the "zero edits outside `net/sync/service/`" criterion that was that milestone's headline proof.
 
 **Recommendation when picked up:** all four are one-line-per-item cleanups. The three same-module dependencies can be removed together in a single small commit the next time `net/sync/service/build.gradle` is touched for an unrelated reason; the `ui/preferences` one needs its own (still trivial) commit since it's a different module's file. Verify with `:dependencies` before removing, per Milestone 11's D14 precedent of not having done so.
+
+### 14. `FileNameGenerator.generateFileName`'s `@JvmStatic` (and `MAX_FILENAME_LENGTH`'s `@VisibleForTesting const val`) has no remaining Java caller
+**Raised:** 2026-08-04, Milestone 13 (`:net:download:service-interface` test conversion) research/plan (D5).
+**Status:** Deferred — recorded, not acted on, per the plan's own decision.
+
+A repo-wide grep found zero Java callers of `FileNameGenerator.generateFileName` or `MAX_FILENAME_LENGTH` anywhere outside this module's own (now-Kotlin) test suite; the only production callers are three Kotlin call sites in `DownloadRequestCreator.kt`. Once the module's test suite converted to Kotlin, both the module-local guard (a Java test reading the member as a JVM static) and the requirement it was guarding (a Java caller that needs the member to be a JVM static) disappeared together — this is a materially different situation from "coverage was lost," since nothing left in the repo needs `@JvmStatic` here. Removing it would be a production edit and was out of scope for a test-only milestone; `javap -p` at that milestone's boundary snapshots the shape so the change, if it happens, is a deliberate decision rather than a silent regression.
+
+**Recommendation when picked up:** a two-annotation removal (`@JvmStatic` on `generateFileName`, `@VisibleForTesting` is arguably still worth keeping since it documents intent even without a Java caller) — trivial in isolation, but confirm no Java caller has appeared in the repo since this was last checked before acting, and treat the removal as behavior-visible if any new Java caller is added in the same change.
 
 ## Resolved (kept for history)
 
