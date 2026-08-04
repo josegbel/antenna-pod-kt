@@ -19,6 +19,7 @@
 - [ ] PR opened
 
 ## Decisions for next session
+- **Pre-PR `./gradlew checkstyle lint` gate (2026-08-04):** run failed with 3 pre-existing, unrelated issues — `:app-wearos:compileFreeDebugKotlin`/`compilePlayDebugKotlin` (`EpisodeDetailActivity.kt:115:28`, the same carry-over M10/M12 already disclosed) and `:app:spotbugsPlayDebug` (7 violations, byte-identical to M10's disclosed set: 2× `MainActivity`, 1× `FeedInfoFragment`, 1× `OnlineFeedViewActivity`, 1× `PreferenceActivity`, 2× `QueueFragment`). Verified directly, not taken on precedent's word: checked out unmodified `origin/develop` in a scratch worktree and re-ran the identical failing tasks — byte-identical failures, same line numbers, same violation set. Confirmed unrelated to this milestone's diff (which touches only the test source set). No fix attempted, per this repo's convention of not fixing pre-existing issues found incidentally.
 - Module: `:net:download:service-interface`. Track: `kotlin` only, test-only conversion. Milestone 13. Chosen over the other queued suite (`:net:sync:service-interface`, from Milestone 11) per José's explicit choice this session — that suite stays queued for a future milestone.
 - Branch: `antennapod-net-download-service-interface-kotlin-milestone-13`, created off `origin/develop` (which already includes Milestone 12's merged PR #18).
 - This is unaffiliated OSS portfolio work — see `services/android-migration/projects/portfolio/README.md`.
