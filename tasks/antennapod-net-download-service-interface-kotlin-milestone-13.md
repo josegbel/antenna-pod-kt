@@ -1423,3 +1423,227 @@ rather than an amend, matching the git safety protocol.
 APPROVE. Proceed to `legacy-android-red-team` for the implementation-review stage per the lifecycle.
 The one MINOR finding (stale checkpoint "Resume command" text) does not block merge and can be fixed
 opportunistically.
+
+---
+
+## Red-Team Verdict (Implementation)
+_By: legacy-android-red-team | 2026-08-04 | Loop 1 of max 2_
+
+### Verdict
+APPROVE
+
+### Verification performed this loop
+
+Read Research, Plan, Plan — Revision 1, both Red-Team Verdict (Plan) sections, Implementation Notes,
+and the Code Review Verdict in full, plus `tasks/antennapod-net-sync-service-kotlin.md`'s "Red-Team
+Verdict (Implementation)" section as the calibration example for depth. Both prior stages already did
+substantial independent re-verification of their own claims; the goal here was to re-derive the load-
+bearing claims from source, a live Gradle/javap run, and byte-level inspection myself, not to re-read
+either stage's account of having done so. Working tree confirmed clean, on-branch, 7 commits ahead of
+`origin/develop` at the unchanged merge-base `939659e578d9fbac62b9a0010df9726303cb53f6` before starting.
+
+- **File Scope, independently, against `origin/develop` (fetched fresh, confirmed unchanged from the
+  recorded merge-base SHA) rather than reading the Code Review Verdict's citation.**
+  `git diff --stat origin/develop..HEAD -- .` → exactly 16 files: the 6 `.java`→`.kt` renames,
+  `README.md`, `tasks/antennapod-model-kotlin-future-work.md`, the task file, the checkpoint file.
+  Nothing under `src/main/`, no `build.gradle`, no `config/checkstyle/suppressions.xml`, no file in
+  any other module. Matches File Scope exactly (task item 5). No finding.
+- **The `checkNotNull` deviation (D10/D16/AC15) — read `DownloadRequestBuilderTest.kt` in full and
+  grepped the whole test source set independently (task item 1).** `grep -rn '!!'
+  net/download/service-interface/src/test/` → zero hits. `grep -rn 'checkNotNull\|requireNotNull'` →
+  exactly one, at `DownloadRequestBuilderTest.kt:93`
+  (`checkNotNull(bundleOut.getParcelableArrayList<DownloadRequest>("r"))`). It is the sole
+  null-assertion mechanism in the converted suite. Compared against the Java original
+  (`git show 939659e57:.../DownloadRequestBuilderTest.java`) line-for-line: Java assigns the raw,
+  unchecked `bundleOut.getParcelableArrayList("r")` result to `fromParcel` and lets any null flow
+  into the first dereference (`fromParcel.size()`) three lines later, throwing `NullPointerException`
+  there. Kotlin's `checkNotNull(...)` throws `IllegalStateException` immediately at the assignment
+  site instead. **This is a genuine, if narrow, exception-type change on the null path** — disclosed
+  by the developer and independently reproduced by the code reviewer (reverted to the Plan's literal
+  assumed shape, got the exact compile error), but neither prior pass stated the exception-type
+  consequence explicitly for the record. It is inert for the actual suite: all three call sites of
+  `doTestParcelInArrayList` complete a real `Bundle`/`Parcel` round trip that Robolectric always
+  succeeds at, so this path never fires in 54/54 green runs on both flavors (reconfirmed this loop —
+  see below), and no assertion or test in the suite characterizes the null-return branch of
+  `Bundle.getParcelableArrayList`. Placement is otherwise correct: it is the only mechanism used, `!!`
+  is unconditionally absent, and it does not touch, reorder, or weaken any assertion line (the D15
+  residual for this file is empty both before and after the fix — reconfirmed below). Recorded as a
+  MINOR concern, not a blocker — see Concerns.
+- **The `AutoDownloadManager` `FutureTask` substitute (D3, task item 2) — read
+  `DownloadServiceInterfaceTest.kt:163-175` directly.** The anonymous subclass is exactly
+  `override fun autodownloadUndownloadedItems(context: Context?): Future<*> = FutureTask<Void?> { null }`,
+  matching D3's mandated shape with no fallback. The only assertion touching it is
+  `assertSame(manager, AutoDownloadManager.getInstance())` (line 174); nothing in the file calls
+  `autodownloadUndownloadedItems` or `.run()`/`.get()` on the returned `FutureTask`, so the
+  substitute's own runtime behavior under invocation is never exercised and does not need to be
+  characterized. Confirmed `AutoDownloadManager.kt`'s production `abstract fun
+  autodownloadUndownloadedItems(context: Context?): Future<*>` is byte-for-byte unchanged
+  (`git diff 939659e57..HEAD -- net/download/service-interface/src/main/` is empty, verified this
+  loop, not cited from a prior stage) — the non-null return type the test satisfies is genuinely the
+  production signature, not a weakened stand-in. No finding.
+- **AC19's `javap` interop proof — re-run from a fresh, forced rebuild, not from the pasted output in
+  either prior stage's notes (task item 3).** Ran `./gradlew :net:download:service-interface:compileFreeDebugKotlin --rerun`
+  (production `freeDebug`, forced, not reusing any existing `build/tmp/kotlin-classes` output) then
+  `javap -v` and `javap -p` directly against the resulting classes myself.
+  `javap -v de.danoeh.antennapod.net.download.serviceinterface.DownloadServiceInterface` shows all
+  five `WORK_*` fields as `public static final java.lang.String` **on the outer class**, each carrying
+  its own `ConstantValue:` attribute with the exact literal (`episodeDownload`, `episodeUrl:`,
+  `progress`, `media_id`, `was_queued`) — none on `Companion`. (My first pass at this, filtered through
+  `grep -A2`, appeared to show no `ConstantValue:` line; that was my own grep window cutting the
+  output one line short, not a real discrepancy — rerun with a wider context confirmed the attribute
+  is present on all five, matching Implementation Notes and the Code Review Verdict exactly. Flagging
+  the false start rather than silently discarding it, since it is exactly the kind of self-check this
+  stage exists to do.) `javap -p` on `DownloadServiceInterface`, `FeedUpdateManager`,
+  `AutoDownloadManager`, `DownloadRequestCreator`, and `FileNameGenerator` all match D4's table exactly
+  — every accessor `public static`, `MAX_FILENAME_LENGTH` `public static final int`. No finding.
+- **The seven `assertThrows(NullPointerException)` tests fire from unchanged production Kotlin (task
+  item 4).** `grep -rn 'assertThrows(NullPointerException' net/download/service-interface/src/test/`
+  → exactly 7 (5 in `DownloadRequestCreatorTest.kt`, 1 in
+  `DownloadRequestBuilderCharacterizationTest.kt`, 1 in `FileNameGeneratorCharacterizationTest.kt`),
+  matching Research's inventory precisely. Since `git diff 939659e57..HEAD -- src/main/` is empty
+  (confirmed above), the `!!` chains these tests pin — `DownloadRequestBuilder.kt:68`'s `source!!`,
+  `DownloadRequestCreator.kt:55-56,80,98`'s `!!` chain, `FileNameGenerator.kt:32`'s iteration over a
+  null `stripAccents(string)` result — are provably byte-identical before and after this milestone by
+  construction, not merely by inference from a green test run. All seven pass on both flavors
+  (reconfirmed below). No finding.
+- **Characterization suite, run myself as two genuinely separate `--rerun` invocations, not trusted
+  from either prior stage.** `:net:download:service-interface:testFreeDebugUnitTest --rerun` →
+  `BUILD SUCCESSFUL`; read the six `TEST-*.xml` files directly:
+  `DownloadRequestBuilderCharacterizationTest` 11, `DownloadRequestBuilderTest` 4,
+  `DownloadRequestCreatorTest` 13, `DownloadServiceInterfaceTest` 11,
+  `FileNameGeneratorCharacterizationTest` 6, `FilenameGeneratorTest` 9 — all `failures="0"
+  errors="0" skipped="0"`, total 54. `testPlayDebugUnitTest --rerun`, run after the free-flavor
+  invocation completed, as a genuinely separate command line — identical per-class breakdown, 54/54.
+- **D15 assertion-content diff — reconstructed the Perl extractor from the Plan's own source (not
+  copied from either prior stage's scratchpad) and ran the full 1:1 canonicalized diff for all six
+  files against the merge-base Java originals myself.** Empty residual on all six files. Extractor
+  calibration independently confirmed: output line count equals each file's raw
+  `grep -cE '\bassert[A-Z][A-Za-z]*\('` count exactly (13/8/11/22/6/31 = 91).
+- **AC7's four extractor-blind-spot hazards — confirmed by direct inspection.**
+  `input.toByteArray(StandardCharsets.UTF_8)` and `(b.toInt() and 0xFF) or 0x100` present in
+  `FileNameGeneratorCharacterizationTest.kt`'s `md5Suffix`; the four forbidden forms
+  (`toString(16)`, `String.format`, `toUByte`, `0xFF.toByte`, bare `toByteArray()`) all grep to zero.
+  `DownloadRequestBuilderTest.kt`'s `run {` is a **statement** assigning the pre-declared `toParcel`,
+  the `// test DownloadRequests to parcel` comment survives inside it, `toParcel` is not renamed, and
+  `getParcelableArrayList<DownloadRequest>("r")` carries its explicit type argument.
+  `FilenameGeneratorTest.kt` still calls `TextUtils.isEmpty(result)`, and I byte-dumped
+  (`od -An -tx1`) both the shipped `.kt` line and the merge-base `.java` line for the
+  non-breaking-space test (`generateFileNameTreatsTabAndNonBreakingSpaceDifferently`) myself: both
+  read `61 c2 a0 62` — `a` + U+00A0 + `b` — confirming the disclosed transcription-defect fix is
+  genuinely present and byte-identical to the Java original, not merely claimed to be. The three
+  reversed `assertEquals(result, "abc abc")` sites in `FilenameGeneratorTest.kt` (lines 21, 28, 35)
+  are byte-identical in argument order to the Java original at the same three line numbers. Zero
+  `listOf(`/`mapOf(`/`mutableMapOf(` anywhere in the test source set.
+- **AC8/AC9/AC10 — re-derived directly.** `grep -c 'HashMap<String?, DownloadStatus>()'
+  DownloadServiceInterfaceTest.kt` → 7. `git diff 939659e57..HEAD -- src/main/` → empty (see above).
+  `grep -c CompletableFuture` → 0. Read all six `FeedUpdateManager` overrides in
+  `DownloadServiceInterfaceTest.kt` against `FeedUpdateManager.kt`'s production declarations directly:
+  match exactly, including both `runOnceOrAsk` overloads' non-null first `Context` parameter.
+- **AC11–AC15 — re-derived by direct grep.** Zero backticks, zero `!!` beyond the one confirmed
+  `checkNotNull` (see above), zero `.toLong()`/`[0-9]+L` hits, zero leftover `.getX()` calls for the
+  13 required property names via the Plan's own regex, `DownloadServiceInterfaceTest.kt`'s 24 accessor
+  sites confirmed 10/5/5/4 with zero property rewrites in that file, `builder::build` still a bare
+  callable reference at `DownloadRequestBuilderCharacterizationTest.kt:137`.
+- **Toolchain gates, re-run myself.** `ktlintCheck` (module-scoped, `--rerun`) — genuinely executing,
+  not `NO-SOURCE`/`SKIPPED`, `BUILD SUCCESSFUL`, zero `@Suppress` anywhere in the test source set.
+  `checkstyle`/`lint` (module-scoped) — `BUILD SUCCESSFUL`.
+  `compileFreeDebugUnitTestJavaWithJavac`/`compilePlayDebugUnitTestJavaWithJavac` both `NO-SOURCE`.
+  `find src/test -name '*.java'` → nothing; `-name '*.kt' | wc -l` → 6.
+  **`:app:assembleDebug` — ran fresh, not cited from either prior stage.** `BUILD SUCCESSFUL`, 1231
+  tasks, both flavors, confirming `DownloadServiceInterfaceImpl.java`'s unqualified inherited `WORK_*`
+  reads still compile against the converted module — the actual public-API-non-break proof, not an
+  inference from the unit-test suite alone.
+- **README and future-work.md, read in full against the actual diff.**
+  `git diff 939659e57..HEAD -- net/download/service-interface/README.md` shows exactly the three
+  intended bullets changed, phrased as long-term-stable conventions; `grep -in
+  "milestone\|tasks/"` over the shipped README → zero hits, confirming no milestone provenance leaked
+  in (`AGENTS.md`'s requirement). `future-work.md`'s diff is a clean 10-line addition (new item 14,
+  item 3's update); items 6, 7, 8 untouched.
+- **One incidental observation, considered and dismissed.** A fresh, forced
+  `compileFreeDebugUnitTestKotlin --rerun` surfaces two Kotlin compiler **warnings** (not errors) at
+  `DownloadRequestCreatorTest.kt:50,96` — "Only safe (?.) or non-null asserted (!!.) calls are allowed
+  on a nullable receiver of type 'File?'" — on `staleFile.parentFile.isDirectory || …mkdirs()` and its
+  Tier-B sibling. This repo sets no `-Xjsr305`/nullability-enhancement flag anywhere
+  (`grep -rn "jsr305\|Xnullability" -- '*.gradle*'` → zero), so Kotlin's default "warn" (not "strict")
+  handling of externally-sourced `@Nullable` on `java.io.File.getParentFile()` is what's firing, not
+  anything this milestone's conversion introduced. The Java original dereferences
+  `staleFile.getParentFile()` twice, unguarded, in the identical shape
+  (`git show 939659e57:.../DownloadRequestCreatorTest.java` lines 56/94) — so this is a faithful,
+  behavior-preserving transcription of an already-unguarded Java dereference, not a new hazard, and
+  `AGENTS.md` explicitly treats warnings as acceptable ("ensure there are no compilation errors
+  (warnings are okay)"). Not raised as a Concern.
+
+### Concerns
+
+- **Severity:** MINOR
+- **Class:** Silent behavior changes from mechanical translation (checklist #2) — exception-type
+  change, not a coverage or equivalence-claim defect
+- **Concern:** `DownloadRequestBuilderTest.kt:93`'s `checkNotNull(bundleOut.getParcelableArrayList<DownloadRequest>("r"))`
+  throws `IllegalStateException` if the parcel round-trip ever returned null, where the Java original
+  would have thrown `NullPointerException` three lines later at first dereference (`fromParcel.size()`).
+  Both Implementation Notes and the Code Review Verdict disclose and independently reproduce *that a
+  deviation exists and is compiler-forced*, but neither states the exception-type consequence in those
+  terms for the record. The path is genuinely dead in this suite — all three call sites always
+  complete a real `Bundle`/`Parcel` round trip under Robolectric, no assertion characterizes the null
+  branch, and 54/54 stays green on both flavors — so this does not misstate an equivalence claim the
+  milestone actually relies on. It is the kind of thing worth naming explicitly rather than leaving
+  implicit in "a compile error forced a deviation," per this pipeline's own disclosure standard.
+- **Evidence:** `net/download/service-interface/src/test/java/de/danoeh/antennapod/net/download/serviceinterface/DownloadRequestBuilderTest.kt:93`
+  vs. `git show 939659e57:net/download/service-interface/src/test/java/de/danoeh/antennapod/net/download/serviceinterface/DownloadRequestBuilderTest.java`
+  lines 92-98 (unchecked `ArrayList<DownloadRequest> fromParcel = bundleOut.getParcelableArrayList("r");`
+  followed by unguarded `fromParcel.size()` three lines later).
+- **Suggested mitigation:** No code change needed. Add one sentence to Implementation Notes'
+  Deviations section (or the PR description) stating plainly that the substitution changes the
+  exception type on the (never-exercised) null-return path from `NullPointerException` to
+  `IllegalStateException`, so a future reader doesn't have to re-derive it from the diff. Optional and
+  non-blocking.
+
+### Checklist categories considered and dismissed
+
+- **Characterization tests prove equivalence, not just existence (#1)** — re-run myself: 54/54 green
+  on both flavors as genuinely separate invocations, D15's empty-residual diff reconstructed and
+  re-run independently across all six files (not merely re-read), the seven `assertThrows(NullPointerException)`
+  tests confirmed to fire from byte-identical production `!!` sites by construction (empty `src/main/`
+  diff), and AC19's `javap` proof re-run from a fresh forced rebuild rather than trusted from either
+  prior stage's pasted output. No gap found beyond the MINOR concern above, which is exception-*type*
+  precision on an unexercised path, not a hole in what the suite actually characterizes.
+- **Silent behavior changes from mechanical translation (#2)** — the one genuine instance found (the
+  `checkNotNull`/`IllegalStateException` vs. Java's unchecked-null/`NullPointerException` divergence)
+  is disclosed twice already and confined to a dead path; recorded above as MINOR. The `File?`
+  nullable-receiver compiler warnings at `DownloadRequestCreatorTest.kt:50,96` were investigated and
+  dismissed as pre-existing, faithfully-transcribed, warning-only (not error) behavior matching the
+  Java original's own unguarded dereference. No exception-type, operator-overloading, or integer-
+  division surprise found elsewhere; the D22 numeric-widening shift (`assertEquals(long,long)` →
+  `assertEquals(Object,Object)`) is confirmed inert by the green test run itself, per D22's own design.
+- **Public API breakage (#3)** — `:app:assembleDebug` run fresh this loop, green, both flavors, 1231
+  tasks, confirming `DownloadServiceInterfaceImpl.java`'s unqualified inherited `WORK_*` reads and all
+  87 external `@JvmStatic` call sites still compile. `src/main/` diff independently confirmed empty.
+  No finding.
+- **Coverage gaps left unaddressed (#4)** — D2/D4/D5's disclosed, quantified losses
+  (`testWorkConstants`'s shape proof, `FileNameGenerator`'s now-unguarded-and-unneeded `@JvmStatic`)
+  are exactly what AC19's `javap` re-proof was designed to compensate for, and I re-ran that proof
+  from scratch rather than trusting either prior stage's transcription of it. No new gap found.
+- **`gradle-kts`/`di`/`concurrency`/`compose`/`navigation` tracks** — correctly not assessed; this
+  module has no UI, no DI wiring, no threading construct, and `build.gradle` is confirmed byte-for-byte
+  untouched (D20, File Scope). No finding.
+- **Milestone/scope creep (#9)** — `git diff --stat origin/develop..HEAD` matches File Scope exactly
+  (16 files); no architecture change, no test added/removed/renamed/split (54 `@Test` names diffed
+  identical in both directions this loop via direct extraction, not re-trusted), no dependency added
+  to `build.gradle`, no `internal` visibility tightening, no helper deduplication across the two
+  near-duplicate `createFeed` implementations. No finding.
+
+### Summary
+
+Every claim this task named for independent re-derivation held up: the `checkNotNull` deviation is the
+suite's sole null-assertion mechanism, correctly placed, and behaviorally inert on every path the 54
+tests actually exercise (with one MINOR precision gap in how the exception-type consequence was
+recorded); the `FutureTask<Void?> { null }` substitute matches D3 exactly, the production
+`AutoDownloadManager.kt` return type is untouched, and the test never invokes the substituted method;
+AC19's `javap -v`/`-p` proof reproduces byte-for-byte from a fresh forced rebuild (after correcting my
+own first-pass grep window that briefly, and wrongly, suggested the `ConstantValue:` attribute was
+missing); all seven `assertThrows(NullPointerException)` tests are provably tied to unchanged
+production `!!` sites by construction, not inference; and File Scope compliance is exact against a
+freshly fetched `origin/develop`. Beyond the four named items, the D15 assertion-content diff was
+independently reconstructed and rerun clean across all six files, the byte-level non-breaking-space fix
+was independently confirmed with `od`, and `:app:assembleDebug` was rerun fresh rather than cited. The
+one MINOR finding does not block merge.
