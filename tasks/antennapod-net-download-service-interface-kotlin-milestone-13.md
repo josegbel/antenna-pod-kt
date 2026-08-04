@@ -1229,3 +1229,197 @@ anything downstream:
 No Open Question (OQ1–OQ4) was resolved or closed by this implementation — all four stand exactly
 as the Plan left them. Future-work item 14 (D5) and item 3's Milestone 13 update are filed per Step
 7's instruction; items 6, 7, 8 are untouched.
+
+---
+
+## Code Review Verdict
+_By: migration-code-reviewer | 2026-08-04 | Loop 1 of max 3_
+
+### Verdict
+APPROVE
+
+### Verification performed
+
+Read Research, Plan, Plan — Revision 1, both Red-Team Verdict (Plan) sections (including the
+loop-2 Step 4/AC7 textual-sync addendum), and Implementation Notes in full, plus
+`tasks/antennapod-net-sync-service-kotlin.md`'s Code Review Verdict as the calibration example for
+depth. Nothing in this review is taken on the developer's word — every claim below was re-derived
+directly against the actual committed source, not re-read from Implementation Notes' transcription
+of it.
+
+- **File Scope.** `git diff --stat 939659e57..HEAD -- .` shows exactly 16 changed files: the 6
+  `.java`→`.kt` renames, `README.md`, `tasks/antennapod-model-kotlin-future-work.md`, the task file
+  itself, the checkpoint file — nothing else. No production file, no `build.gradle`, no
+  `config/checkstyle/suppressions.xml`, no file in any other module. Matches File Scope exactly. No
+  finding.
+
+- **Independent verification of Deviation 1 (the D10 platform-type claim).** The task explicitly
+  asked me not to take this on trust. I edited `DownloadRequestBuilderTest.kt` to revert
+  `checkNotNull(bundleOut.getParcelableArrayList<DownloadRequest>("r"))` back to the Plan's literal
+  assumed shape (`bundleOut.getParcelableArrayList<DownloadRequest>("r")`, no null handling) and ran
+  `./gradlew --console=plain :net:download:service-interface:compileFreeDebugUnitTestKotlin --rerun`.
+  It failed with a real compile error at all four use sites (`toParcel.size`/`fromParcel.size`,
+  `fromParcel[1].source`, `fromParcel[0].password`, `fromParcel[0].arguments`): "Only safe (?.) or
+  non-null asserted (!!.) calls are allowed on a nullable receiver of type
+  'ArrayList<DownloadRequest!>?'." This is a genuine compiler-forced deviation, not a shortcut —
+  `Bundle.getParcelableArrayList` really is `@Nullable`-annotated in this repo's actual Android
+  SDK/AGP setup, contradicting D10's stated assumption. Reverted the edit
+  (`git checkout -- <file>`) and confirmed the committed content is back to `checkNotNull(...)`.
+  Independently grepped the whole test source set for `!!`: **zero hits**, confirming `checkNotNull`
+  — not `!!` — is what actually shipped, satisfying D16/AC15's unconditional prohibition. The
+  developer's disclosure is accurate and the fix (`kotlin-j2k-style` skill's item 1: replace an
+  unjustified `!!` with `checkNotNull`) is the correct one for a value the Java original also
+  dereferenced without a null check.
+
+- **Independent verification of Deviation 2 (the non-breaking-space defect).** Compared byte-exact
+  content: `git show 939659e57:.../FileNameGeneratorCharacterizationTest.java | sed -n '70p' | od -An
+  -tx1` and the equivalent line in the committed `.kt` file both show `61 c2 a0 62` — `a` + U+00A0
+  (UTF-8 `c2 a0`) + `b` — byte-for-byte identical. The fix is genuinely present and correct in the
+  committed file. Checked `git log --follow` for this file: only one commit exists
+  (`1d49c6bc0`, Step 2), and its committed content already carries the correct non-breaking-space
+  bytes — consistent with the developer's account that the defect was caught by the D15 diff and
+  corrected before that file was ever committed, not caught-and-fixed across two commits. This was
+  the right catch mechanism (D15's per-file assertion-content diff, not a human eyeball pass), and
+  it is exactly the class of silent transcription defect this pipeline's D15 apparatus exists to
+  catch.
+
+- **Independent verification of the Step 3 staging-mistake claim.** Read the actual committed
+  content of the flagged bad commit, `fc487674c`: `git show fc487674c:.../DownloadRequestCreatorTest.kt`
+  shows genuine stale Java — semicolons, `import android.content.Context;`-style statements, blank
+  lines matching Java import-grouping conventions rather than Kotlin's single block. This confirms
+  the claim precisely: the file at that commit was renamed to `.kt` but still held its pre-conversion
+  Java body. The very next commit, `d7f3cb65b`, shows a real diff (207 insertions / 210 deletions
+  across the two Tier B files) and its message correctly identifies the cause (a `git add` invocation
+  naming stale, now-nonexistent `.java` paths that failed fast and staged nothing). Confirmed it is a
+  genuinely new commit, not an amend (`git log` shows both SHAs present in history, not one rewritten
+  over the other). Confirmed the *current* HEAD content of both affected files is real, compiling
+  Kotlin: zero semicolons in either file, and both compile and pass as part of the green test run
+  below. The process mistake was real, was caught before Step 4 as claimed, and the current committed
+  state is correct.
+
+- **Characterization tests, BEFORE/AFTER, as two separate `--rerun` invocations (Risk 12/AC1–AC2) —
+  re-run independently, not trusted from Implementation Notes.**
+  - `./gradlew --console=plain :net:download:service-interface:testFreeDebugUnitTest --rerun` →
+    `BUILD SUCCESSFUL`. Read the JUnit XML directly: 54/54 across all six classes, `0` failures/
+    errors/skipped each, row-for-row matching the Plan's expected per-class counts
+    (13/11/11/9/6/4).
+  - `./gradlew --console=plain :net:download:service-interface:testPlayDebugUnitTest --rerun` (a
+    genuinely separate invocation, run after the free-flavor one completed) → `BUILD SUCCESSFUL`.
+    Same 54/54, identical per-class breakdown.
+  - At no point did I run a combined two-task command line, and neither did the developer per their
+    own disclosure — both individually verified.
+- **AC5 (assertion counts) and AC6 (assertion-content equivalence) — re-derived, not trusted.**
+  Direct `grep -cE '\bassert[A-Z][A-Za-z]*\('` per file: 11/22/6/31/13/8 = **91**, matching Plan and
+  Implementation Notes exactly. Then reconstructed the Plan's own D15 Perl extractor from its exact
+  source in the task file (matched byte-for-byte against a pre-existing copy already in the session
+  scratchpad from a prior agent's work — same script, confirmed by diff) and ran the full 1:1
+  canonicalized diff for **all six files** against the merge-base (`939659e578d9fbac62b9a0010df9726303cb53f6`)
+  Java originals: **empty residual on all six**, reproducing AC6's claim exactly, as AC6 itself
+  requires ("The reviewer re-runs the exact Step 1 command and confirms it reproduces"). Also
+  validated the extractor's own calibration independently: its output line count matches each file's
+  raw `grep -c` assertion count exactly (11/22/6/31/13/8), so the empty-residual result is not an
+  artifact of a mis-calibrated extractor silently skipping lines.
+- **AC4 (no test added/renamed/removed/moved).** Independently extracted the full `@Test`-annotated
+  method name set from both the merge-base Java files and the committed Kotlin files (not reusing the
+  developer's own extraction): 54 names each, identical sets, zero diff. The three underscore names
+  (`parcelInArrayListTest_WithAuth`/`_NoAuth`/`_MixAuth`) are present unchanged.
+- **AC7 (the four extractor-blind-spot hazards) — re-checked by direct inspection.** `md5Suffix` in
+  `FileNameGeneratorCharacterizationTest.kt` contains exactly D13's two pinned expressions
+  (`input.toByteArray(StandardCharsets.UTF_8)`, `(b.toInt() and 0xFF) or 0x100`); grep for the four
+  forbidden forms (`toString(16)`, `String.format`, `toUByte`, `0xFF.toByte`, bare `toByteArray()`)
+  returns zero across the whole test source set. `DownloadRequestBuilderTest.kt` uses `run {` as a
+  **statement** (not an initializer expression) assigning the pre-declared `toParcel`, the
+  `// test DownloadRequests to parcel` comment survives inside it, `toParcel` is not renamed, and
+  `getParcelableArrayList<DownloadRequest>("r")` carries its explicit type argument — this is the
+  corrected D10 shape (post loop-2/addendum), and Step 4/AC7's text in this same file already reads
+  the corrected "statement" wording, confirming the orchestrating session's textual-sync fix actually
+  landed in the document, not just in the developer's head. `FilenameGeneratorTest.kt` still calls
+  `TextUtils.isEmpty(result)` and its three `assertEquals(result, "abc abc")` reversed-argument sites
+  transcribe byte-identical to the Java original (checked by eye against
+  `git show 939659e57:.../FilenameGeneratorTest.java`). No `listOf(`/`mapOf(`/`mutableMapOf(` anywhere
+  in the test source set.
+- **AC8/AC9/AC10 (interop constraints, no production edit).** `grep -c
+  'HashMap<String?, DownloadStatus>()' DownloadServiceInterfaceTest.kt` → 7. `git diff 939659e57 --
+  net/download/service-interface/src/main/` → **empty** (0 lines), confirmed directly, not merely
+  cited. The `AutoDownloadManager` anonymous subclass returns `FutureTask<Void?> { null }` exactly as
+  D3 specifies; `grep -c CompletableFuture` → 0. All six `FeedUpdateManager` overrides and both
+  `AutoDownloadManager` overrides match their production declarations' nullability exactly, including
+  both `runOnceOrAsk` overloads' non-null `Context` parameter — verified by reading the override
+  signatures directly against `FeedUpdateManager.kt`/`AutoDownloadManager.kt`, not merely by the file
+  compiling.
+- **AC11/AC12/AC13/AC14/AC15 — re-derived by direct grep, not trusted.** Zero backticks, zero `!!`,
+  zero `.toLong()`/`L`-suffix hits, zero leftover `.getX()` calls for the 13 required property names,
+  `DownloadServiceInterfaceTest.kt`'s 24 accessor sites (10/5/5/4) all still function calls with zero
+  property rewrites in that file, `builder::build` still a bare callable reference passed to
+  `assertThrows` (no fallback needed, matching the developer's claim).
+- **AC16 (ktlint).** `./gradlew :net:download:service-interface:ktlintCheck` → `BUILD SUCCESSFUL`,
+  `ktlintTestSourceSetCheck` genuinely executing (not `NO-SOURCE`/`SKIPPED`). Zero
+  `@Suppress("ktlint:…")` anywhere.
+- **AC17 (module-scoped checkstyle/lint).** `./gradlew :net:download:service-interface:checkstyle
+  :net:download:service-interface:lint` → `BUILD SUCCESSFUL`.
+- **AC18.** `find .../src/test -name '*.java'` → nothing. `-name '*.kt' | wc -l` → 6.
+- **AC19 (`javap -v`/`ConstantValue:` re-proof) — re-run independently against the actual compiled
+  classes**, not copy-pasted from Implementation Notes: `javap -v -classpath
+  .../build/tmp/kotlin-classes/freeDebug de.danoeh.antennapod.net.download.serviceinterface.DownloadServiceInterface`
+  shows all five `WORK_*` fields as `public static final java.lang.String` directly on
+  `DownloadServiceInterface` (not `Companion`), each carrying its own `ConstantValue:` attribute with
+  the exact literal string. Matches Implementation Notes' pasted output exactly, byte for byte.
+- **AC20.** `./gradlew --console=plain :app:assembleDebug` → `BUILD SUCCESSFUL` (both flavors,
+  1231 tasks), re-run independently rather than trusted.
+- **AC21/AC22.** `git diff --name-only` confirms File Scope compliance (see above). README diff shows
+  exactly the three intended bullets changed (`const val` justification, `--rerun` two-invocations
+  correction, "tests are Java by design" replaced with the Kotlin-tests/`javap` guidance); grep for
+  the two forbidden false-exclusivity phrases → 0. `tasks/antennapod-model-kotlin-future-work.md`
+  diff is 10 pure insertions (new item 14 plus item 3's Milestone 13 update); items 6/7/8 untouched,
+  confirmed by reading the diff directly.
+
+### Findings
+
+None at CRITICAL or MAJOR severity. Every Acceptance Criterion (AC1–AC22) was independently
+re-verified against live source, a live compiler/Gradle run, or a live `javap` dump — not accepted on
+the developer's transcription — and all 22 check out exactly as reported. File Scope is respected
+exactly. Both disclosed items (the D10 platform-type deviation and the non-breaking-space
+transcription defect) are genuine, correctly diagnosed, correctly fixed, and consistent with this
+pipeline's own deviation-disclosure and D15-audit mechanisms rather than being informal shortcuts.
+The Step 3 staging mistake was real, caught before it could propagate, and fixed with a new commit
+rather than an amend, matching the git safety protocol.
+
+- **Severity:** MINOR
+- **Class:** Quality
+- **File:line:** `features/antennapod-net-download-service-interface-kotlin-milestone-13.checkpoint.md:22`
+- **Finding:** The checkpoint's "Resume command" section still reads "Milestone 13 scaffolded,
+  Research not yet started. Next: invoke `legacy-android-researcher`…" — stale boilerplate left over
+  from the checkpoint's initial scaffolding, contradicted by the same file's own "Lifecycle progress"
+  checklist three sections above, which correctly shows Research through Implement all checked off.
+  Cosmetic only; nothing downstream reads this field programmatically, but it would mislead a human
+  or agent resuming from this checkpoint file alone without reading the task file first.
+- **Suggested fix:** Update the "Resume command" line to reflect actual state, e.g. "Implementation
+  complete (all 7 Steps, 22/22 ACs). Next: invoke `migration-code-reviewer` for code review" (now
+  superseded by this verdict — update again to point at `legacy-android-red-team` for the
+  implementation-review stage). Not blocking; fix in the same commit as the next stage's update, or
+  whenever this checkpoint file is next touched.
+
+### Verification artifacts
+
+- Independently re-ran both flavors' test suites as two separate `--rerun` invocations: 54/54 green
+  each, identical per-class breakdown.
+- Independently reconstructed and ran the D15 Perl extractor against all 6 files' merge-base Java
+  originals vs. committed Kotlin: empty residual on all six, extractor calibration confirmed
+  (line counts match raw assertion `grep -c` exactly).
+- Independently reverted `DownloadRequestBuilderTest.kt`'s `checkNotNull(...)` to the Plan's literal
+  assumed shape and reproduced the exact compile failure the developer reported, then restored the
+  committed version.
+- Independently confirmed the non-breaking-space fix at the byte level (`od -An -tx1`) against the
+  merge-base Java original.
+- Independently re-ran `javap -v` against the actual compiled `freeDebug` classes and confirmed the
+  `ConstantValue:` attribute on all five `WORK_*` constants.
+- Independently re-ran `:app:assembleDebug`, module-scoped `checkstyle`/`lint`, and `ktlintCheck`: all
+  green.
+- Independently re-extracted the 54-name `@Test` method-name set from both language versions:
+  identical.
+
+### Recommendation
+
+APPROVE. Proceed to `legacy-android-red-team` for the implementation-review stage per the lifecycle.
+The one MINOR finding (stale checkpoint "Resume command" text) does not block merge and can be fixed
+opportunistically.
