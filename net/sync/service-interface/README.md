@@ -49,14 +49,22 @@ module must preserve:
 8. **Test tasks are unflavoured**: `testDebugUnitTest` / `testReleaseUnitTest`, aggregated by
    `test`. This module does not apply `playFlavor.gradle` (unlike its sibling `:net:sync:service`)
    — do not copy flavoured task names from a module that does.
-9. **The characterization suite (`src/test/`) is Java by design and must stay Java.** All 28
-   external consumers of this module are Java, so a Java test suite is the equivalence oracle for
-   Java-calling-Kotlin binary compatibility. Four of the nine test files are compile-time guards —
-   they fail to *compile*, not just fail at runtime, if a JVM-shape decision above regresses
-   (`UploadChangesResponseTest`'s unqualified field read, `ISyncServiceTest`'s `throws`
-   declarations, `SyncServiceExceptionTest`'s `super(...)` calls, `SynchronizationQueueTest`'s
-   null-argument stub calls). Converting this suite to Kotlin is a legitimate future milestone but
-   must preserve those four files' Java-oracle property.
+9. **The characterization suite (`src/test/`) is Kotlin, except `ISyncServiceTest.java`, which
+   stays Java.** That file's four tests exercise a stub (`TestSyncService`) declared inside the
+   file itself — no production class implements `ISyncService` in this module — so their entire
+   oracle is javac's acceptance of `throws SyncServiceException` on six overrides and of
+   non-wildcarded `List<String>`/`List<EpisodeAction>` parameters, a property only a Java suite
+   can have. It is the live compile-time guard for conventions #4 and #5; a Kotlin rewrite of it
+   would assert only what its own nested stub does. Conventions #1, #2, #3, #7 and
+   `SyncServiceException`'s `open`-ness are guarded by tests that survive being Kotlin — by
+   reflection (#2, #3, #7), by Kotlin's own null-checking rejecting a non-null argument at compile
+   time (#1), or by the language requiring `open` for a subclass to exist at all. Conventions
+   **#6a and #6b have no test guarding them in this module any more.** #6a
+   (`SynchronizationQueue.getInstance()`/`setInstance()`) is backed by many external Java call
+   sites across several modules; #6b (`EpisodeAction.readFromJsonObject`) is backed by exactly one.
+   When changing either, run `javap -p` on the built classes to confirm the shape directly, and
+   treat #6b as having no guard at all — external or internal — once its one remaining Java caller
+   converts to Kotlin. See #8 for the test task names to run.
 10. **Only `EpisodeActionJsonTest` and `EpisodeActionCharacterizationTest` use Robolectric.** It
     is required because `org.json.JSONObject` is an Android-framework stub under plain JUnit — not
     because of `android.text.TextUtils`/`android.util.Log`, which this module also uses but which
