@@ -9,9 +9,9 @@ import org.junit.Test
 
 /**
  * Characterizes [UploadChangesResponse] against the live Java implementation. The nested
- * subclass below, reading the inherited `timestamp` field unqualified, is a compile-time
- * guard: it fails to compile unless the converted class exposes `timestamp` as a genuine
- * public field (`@JvmField`) rather than a private backing field plus accessor.
+ * subclass below, reading the inherited timestamp field unqualified, is a compile-time
+ * guard: it fails to compile unless the converted class exposes timestamp as a genuine
+ * public field (@JvmField) rather than a private backing field plus accessor.
  */
 class UploadChangesResponseTest {
 

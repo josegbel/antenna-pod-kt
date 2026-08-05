@@ -7,8 +7,8 @@ import org.junit.Test
 
 /**
  * Characterizes [SubscriptionChanges] against the live Java implementation, including its
- * exact (and misleadingly-named, singular "Change") `toString()` format, which reaches
- * `Log.d` in production.
+ * exact (and misleadingly-named, singular "Change") toString() format, which reaches
+ * Log.d in production.
  */
 class SubscriptionChangesTest {
 

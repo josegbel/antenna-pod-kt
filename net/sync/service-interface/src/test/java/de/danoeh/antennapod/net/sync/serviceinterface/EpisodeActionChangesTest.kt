@@ -6,8 +6,8 @@ import org.junit.Test
 
 /**
  * Characterizes [EpisodeActionChanges] against the live Java implementation, including its
- * exact (and misleadingly-named — it does not match the class name) `toString()` format,
- * which reaches `Log.d` in production.
+ * exact (and misleadingly-named — it does not match the class name) toString() format,
+ * which reaches Log.d in production.
  */
 class EpisodeActionChangesTest {
 

@@ -10,8 +10,8 @@ import org.junit.Test
 
 /**
  * Characterizes [SyncServiceException] against the live Java implementation. The nested
- * subclass below, calling both `super(...)` forms, is a compile-time guard: it fails to
- * compile unless the converted class stays `open`.
+ * subclass below, calling both super(...) forms, is a compile-time guard: it fails to
+ * compile unless the converted class stays open.
  */
 class SyncServiceExceptionTest {
 

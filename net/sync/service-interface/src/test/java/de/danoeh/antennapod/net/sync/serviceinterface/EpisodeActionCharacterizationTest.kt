@@ -21,9 +21,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Characterizes [EpisodeAction]'s builder, getters, static `Action` aliases,
- * `toString`, and the known `equals`/`hashCode` defect at
- * `EpisodeAction.java:161` (`action != that.action`, where every sibling clause is an
+ * Characterizes [EpisodeAction]'s builder, getters, static Action aliases,
+ * toString, and the known equals/hashCode defect at
+ * EpisodeAction.java:161 (action != that.action, where every sibling clause is an
  * equality test). This suite pins today's behaviour, defect included; it does not endorse the
  * defect, and fixing it is out of scope for this migration (see the module README and future-work
  * item 9).
@@ -203,9 +203,9 @@ class EpisodeActionCharacterizationTest {
     }
 
     // ---- equals/hashCode: pinning a known defect (7) ----
-    // EpisodeAction.java:161 reads `action != that.action` where every sibling clause is an
+    // EpisodeAction.java:161 reads action != that.action where every sibling clause is an
     // equality test. Consequence: field-identical instances compare unequal, and instances
-    // differing only in `action` compare equal while having different hash codes. This suite
+    // differing only in action compare equal while having different hash codes. This suite
     // pins that behaviour as-is; it is not fixed in this migration (see README, future-work #9).
 
     @Test
