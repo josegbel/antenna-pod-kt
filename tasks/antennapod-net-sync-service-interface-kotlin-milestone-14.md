@@ -1091,3 +1091,204 @@ Independently re-derived every load-bearing claim rather than trusting the Imple
 - **Quality/Convention** — no dead code, no `TODO`/`FIXME`, no unjustified `!!` beyond the pinned 29, ktlint genuinely gates the converted source set (via the correct, if differently-named, task) with zero suppressions.
 
 Loop 1 of max 3. One MAJOR finding, same-loop fixable, does not require re-verifying anything beyond AC15 and the Implementation Notes line it corrects — re-invoke for loop 2 once fixed.
+
+---
+
+## Code Review Verdict — Loop 2
+_By: migration-code-reviewer | 2026-08-05 | Loop 2 of max 3_
+
+### Verdict
+APPROVE
+
+### Verification performed this loop
+
+Did not take commit `9b272eff4`'s own account of itself on trust. Re-ran every check the fix could plausibly have affected, plus the full battery the fix should *not* have affected, from scratch:
+
+- **AC15 itself** — ran the exact specified command, `grep -rnF '`' net/sync/service-interface/src/test/`: **zero hits, exit 1.** Genuinely reproduces now, not just per the commit's own claim.
+- **The fix's blast radius** — `git diff --stat 9b272eff4~1 9b272eff4` shows exactly 5 source files (`EpisodeActionChangesTest.kt`, `EpisodeActionCharacterizationTest.kt`, `SubscriptionChangesTest.kt`, `SyncServiceExceptionTest.kt`, `UploadChangesResponseTest.kt`) plus the checkpoint and task-file docs — nothing else. Read the actual diffs for `SyncServiceExceptionTest.kt` and `UploadChangesResponseTest.kt` line by line: both hunks touch only KDoc comment text (backticks stripped around `super(...)`, `open`, `timestamp`, `@JvmField`), zero change to any identifier, statement, or assertion. **AC15's fix is comment-only, as claimed.**
+- **The 3 untouched files really are untouched** — `git diff a8b4cc3ea -- .../EpisodeActionJsonTest.kt`, `.../SynchronizationProviderTest.kt`, `.../SynchronizationQueueTest.kt` against the pre-fix commit I reviewed in loop 1: **all three empty, 0 lines.** Not inferred from the commit's file list — independently diffed.
+- **`!!` inventory (D4/AC11/AC12), re-run from scratch** — `grep -o '!!' "$f" | wc -l` per file: `EpisodeActionJsonTest.kt` 28, `SyncServiceExceptionTest.kt` 1, all six others 0. Total **29**, unchanged from loop 1. Confirms the comment edit in `SyncServiceExceptionTest.kt` (which sits in the file's KDoc header, above and unrelated to line 76's `cause!!.message`) did not touch the file's sole `!!` site.
+- **D10's assertion-content diff, re-run for all 8 files, not just the 5 touched** — used the same scratchpad `assertlines.pl` extractor from loop 1, diffed each converted file against its Java original at `5f816b768`: **empty on every one of the 8, exit 0 on every one.** The extractor strips backticks as part of its normalization (`s/\`//g`) before comparing, so it was already blind to this class of edit, but I verified by direct diff rather than relying on that alone — the touched files' actual assertion/logic lines are byte-identical to loop 1's reviewed state; only comment lines changed.
+- **Both test variants, re-run as separate `--rerun` invocations** — `testDebugUnitTest --rerun`: BUILD SUCCESSFUL, per-class XML counts summed to **83**, zero `failures`/`errors` across all 9 class result files. `testReleaseUnitTest --rerun` (separate invocation): BUILD SUCCESSFUL, **83**, zero failures/errors. Matches loop 1's baseline exactly — expected, since the fix cannot affect test behavior, and confirmed rather than assumed.
+- **Diff scope against the merge-base, re-checked whole-branch, not just the new commit** — `git diff --name-status 5f816b768` still lists exactly the 8 renamed test files, `README.md`, `future-work.md`, the checkpoint, and this task file. `git diff 5f816b768 -- net/sync/service-interface/src/main/` → 0 lines. `git diff 5f816b768 -- net/sync/service-interface/build.gradle` → 0 lines. `git diff 5f816b768 -- .../ISyncServiceTest.java` → empty, exit 0. **AC6/AC18/AC24 still hold after the fix commit; nothing new leaked into scope.**
+- **Implementation Notes' "Post-review correction" subsection** — read it in full. It accurately states the finding, the reasoning for choosing "strip the backticks" over "disclose the gap" (AC15's command is well-formed and closable outright, unlike AC7/AC22's task-naming gap which names a task that genuinely doesn't exist), and lists exactly the same five re-verification steps I independently reproduced above. No overclaiming found.
+
+### Findings
+
+None open. Loop 1's sole MAJOR finding is fixed at the root (the literal command now reproduces zero, independently confirmed) and its fix is proportionate and disclosed in-place — no new finding introduced by the fix itself (confirmed via full-suite re-run, not just a diff read).
+
+### Verdict rationale
+
+24 of 25 ACs were already confirmed exactly as claimed in loop 1 by direct re-execution. Loop 2 confirms the 25th (AC15) now reproduces literally, confirms the fix touched nothing outside five KDoc comment blocks (independently diffed, not inferred), and re-confirms — rather than assumes unaffected — every check adjacent to the fix: the `!!` inventory, D10's 8-file assertion-content diff, both test variants, and the full diff scope against the merge-base. All clean. **Approved.**
+
+Loop 2 of max 3 (final — approved, no loop 3 needed).
+
+---
+
+## Red-Team Verdict (Implementation)
+_By: legacy-android-red-team | 2026-08-05 | Loop 1 of max 2_
+
+### Verdict
+APPROVE
+
+### Verification performed this loop
+
+Read Research, Plan, Plan — Revision 1, both Red-Team Verdict (Plan) sections, Implementation Notes
+(including the Post-review correction subsection), and both Code Review Verdict sections in full. Both
+prior stages already did substantial independent re-verification of their own claims and each other's;
+the goal here was to re-derive the highest-consequence claims from source and a live Gradle/`javap`/`git`
+run myself — including actually executing the D5 falsification, not reading a third account of it — not
+to trust two convergent prior accounts of the same evidence. Branch confirmed at `9b272eff4`, working
+tree clean except the two spec docs, 6 commits ahead of a **freshly fetched** `origin/develop`
+(`git fetch origin develop` this loop, not reused from either prior stage) — `git merge-base HEAD
+origin/develop` → `5f816b768`, unchanged from what every prior stage recorded.
+
+- **D2's scoping decision, re-read from the actual file rather than the Plan's paraphrase.** Read
+  `ISyncServiceTest.java` in full. All four `@Test` methods exercise `TestSyncService`, a `private
+  static` class declared inside the file itself with no production implementor in this module:
+  `implementorCanBeInvokedThroughTheInterfaceType` asserts `changes.getTimestamp() == 100L` against a
+  value the stub's own `getSubscriptionChanges` override just echoed back from its `lastSync` parameter;
+  `checkedExceptionIsCatchableThroughTheInterfaceType` asserts a message (`"login failed"`) the stub's own
+  `login()` override just threw; the two `uploadX` tests assert `response.timestamp` against arithmetic
+  (`list.size() + list.size()`, `list.size()`) the stub computed from the exact lists the test handed it.
+  Strip the compile-time oracle (the `throws SyncServiceException` declarations, the `List<String>`/
+  `List<EpisodeAction>` non-wildcarded parameters) and all four reduce to the stub asserting itself, no
+  behavior left that isn't self-referential. Confirms D2's central claim exactly, independently of the
+  Plan's own account. **Byte-identity, independently, via hash rather than `git diff`'s emptiness alone:**
+  `git diff 5f816b768 -- .../ISyncServiceTest.java` → empty, **and** `git show
+  5f816b768:.../ISyncServiceTest.java | shasum -a 256` vs. `git show HEAD:.../ISyncServiceTest.java |
+  shasum -a 256` → identical digest (`9854feb6…`). Confirmed genuinely byte-identical to the fresh
+  merge-base, not merely "unchanged since some earlier commit" that a stale local `develop` could have
+  masked.
+- **D5's live falsification — actually re-run, fresh, not trusted from two prior accounts of the same
+  procedure.** Copied the committed `EpisodeActionJsonTest.kt` aside, then mutated
+  `readFromJsonObjectAbsentTimestampLeavesTimestampNull` in place: replaced `baseJson("play")` with a
+  hand-built `JSONObject` carrying `"episode"`/`"action"` but no `"podcast"` (D5's exact mutation,
+  confirmed against `EpisodeAction.kt:200-206`'s `TextUtils.isEmpty(podcast)` mandatory-field check,
+  which the Robolectric-backed test genuinely exercises).
+  - **Run 1 — shipped `!!` form + mutation:** `./gradlew :net:sync:service-interface:testDebugUnitTest
+    --rerun --tests "…EpisodeActionJsonTest.readFromJsonObjectAbsentTimestampLeavesTimestampNull"` →
+    **FAILED**, `java.lang.NullPointerException` at `EpisodeActionJsonTest.kt:120` (the `!!` assignment
+    line). Matches the claim exactly.
+  - **Run 2 — softened `?.` form + mutation** (`val action = EpisodeAction.readFromJsonObject(json)`,
+    `assertNull(action?.timestamp)`): re-ran the identical test → **PASSED**. Vacuously, exactly as
+    claimed — the test now passes whether `readFromJsonObject` regressed to null or genuinely returned a
+    null-timestamp action, which is precisely the failure mode the falsification exists to rule out.
+  - Reverted via `git checkout`, confirmed the file is back to its committed content (diffed against the
+    pre-mutation backup — clean) and `git status` shows no residue.
+  Ran this end-to-end for one of the three sites rather than all three: the other two
+  (`readFromJsonObjectUnparseableTimestampIsSwallowedAndLeavesTimestampNull`,
+  `readFromJsonObjectEmptyGuidLeavesGuidNull`) share the identical mechanism — same
+  `readFromJsonObject(json)!!` call against the same mandatory-field check, same `assertNull(action.X)`
+  shape — confirmed by direct reading of both, not merely assumed. This is the same scope the
+  `migration-code-reviewer`'s loop 1 chose for the same reason; disclosing it explicitly here rather than
+  implying full re-execution of all six runs.
+- **The `!!` inventory (29 total, D4's 23/6 split) — recounted independently, not read off the Plan's or
+  Implementation Notes' table.** Per-file `grep -o '!!' "$f" | wc -l`: `EpisodeActionJsonTest.kt` 28,
+  `SyncServiceExceptionTest.kt` 1, all six other converted files 0 — **total 29.** Confirmed the one
+  doubled-`!!` line independently: `grep -n '!!'` on `EpisodeActionJsonTest.kt` piped through a doubled-
+  occurrence check found exactly one line, `:385`
+  (`assertNotEquals(original.timestamp!!.time, roundTripped.timestamp!!.time)`) — `grep -c` on that file
+  → 27 lines, `grep -o | wc -l` → 28 occurrences, matching AC11's corrected figures exactly. Independently
+  confirmed the 15/8 assignment-site split: `grep -c 'readFromJsonObject(.*)!!'` → 15, `grep -c
+  'writeToJsonObject()!!'` → 8, both in `EpisodeActionJsonTest.kt`. Both AC12 forbidden-pattern greps
+  (the `?.` softening pattern and the `checkNotNull`/`requireNotNull`/`?:`/`orEmpty()`/`?.let` pattern) —
+  re-ran verbatim, 0 hits each.
+- **Diff scope, against the freshly fetched `origin/develop`, not a stage's prior citation of it.**
+  `git diff --stat 5f816b768` → exactly the 8 renamed `.java`→`.kt` pairs, `net/sync/service-
+  interface/README.md`, `tasks/antennapod-model-kotlin-future-work.md`, the checkpoint file, and this
+  task file. `git diff 5f816b768 -- net/sync/service-interface/src/main/` → 0 lines. `git diff
+  5f816b768 -- net/sync/service-interface/build.gradle` → 0 lines. Nothing outside File Scope.
+- **Both test variants, run myself as two genuinely separate `--rerun` invocations.**
+  `:net:sync:service-interface:testDebugUnitTest --rerun` → BUILD SUCCESSFUL; parsed all 9
+  `TEST-*.xml` files directly (not the console summary): `EpisodeActionJsonTest` 28,
+  `EpisodeActionCharacterizationTest` 25, `SynchronizationProviderTest` 9, `SyncServiceExceptionTest` 7,
+  `ISyncServiceTest` 4, `SynchronizationQueueTest` 3, `UploadChangesResponseTest` 3,
+  `EpisodeActionChangesTest` 2, `SubscriptionChangesTest` 2 — **83 total, 0 failures, 0 errors, 0
+  skipped.** `testReleaseUnitTest --rerun`, run as a genuinely separate invocation afterward — identical
+  per-class breakdown, **83/0/0/0** again.
+- **AC20's `javap` re-proof, and the six `-p` rows — reproduced fresh against
+  `net/sync/service-interface/build/tmp/kotlin-classes/debug`, not pasted from either prior stage's
+  output.** `SynchronizationQueue`: `public static final … getInstance()` / `setInstance(…)` on the
+  outer class (#6a). `EpisodeAction`: `public static final … readFromJsonObject(org.json.JSONObject)`
+  on the outer class (#6b), plus `NEW`/`DOWNLOAD`/`PLAY`/`DELETE` as `public static final` fields (#3).
+  `SynchronizationProvider.fromIdentifier` `public static` (#1/#6). `UploadChangesResponse`: `public
+  final long timestamp`, no `getTimestamp()` in the method list (#2). `SyncServiceException`: `private
+  static final long serialVersionUID` (#7). **`javap -c -p` on `EpisodeAction`** shows
+  `invokevirtual … java/text/SimpleDateFormat.format:(Ljava/util/Date;)Ljava/lang/String;` at the
+  `writeToJsonObject` call site — the `Date`-typed overload, not `Format.format(Ljava/lang/Object;)…` —
+  confirming Milestone 11's D9 fork is unchanged on production bytecode this milestone never touched.
+  All seven rows match Implementation Notes and both Code Review Verdicts exactly.
+- **AC15's fix — read the actual diff (`git diff a8b4cc3ea 9b272eff4`) hunk by hunk across all 5 touched
+  files, not the Post-review correction subsection's account of it.** Every one of the 14 removed
+  backticks sits inside a `/** … */` KDoc block or a `//` line comment — `` `toString()` ``, `` `Log.d`
+  ``, `` `action` ``, `` `super(...)` ``, `` `open` ``, `` `timestamp` ``, `` `@JvmField` `` and
+  similar — zero touches any identifier, statement, or assertion in any of `SubscriptionChangesTest.kt`,
+  `EpisodeActionChangesTest.kt`, `UploadChangesResponseTest.kt`, `SyncServiceExceptionTest.kt`,
+  `EpisodeActionCharacterizationTest.kt`. Re-ran the exact AC15 command
+  (`grep -rnF '`' net/sync/service-interface/src/test/`) → 0 hits, exit 1. Confirmed independently.
+- **README (D3/AC25) and future-work.md (D17) diffs, read directly.** Convention #9's replacement text
+  states all four required things (the held-back file and its self-referential-stub reason; which
+  mechanism now guards #1/#2/#3/#7/`open`; that #6a/#6b have no module-local guard, `javap -p` named,
+  #6b's expiry flagged; a cross-reference to #8 rather than a rewrite). `grep -in
+  "milestone\|tasks/"` over the new text → zero hits — no task provenance leaked in, matching
+  `AGENTS.md`'s long-term-stable-convention requirement. Conventions #1–#8/#10/#11 confirmed
+  byte-for-byte unchanged (only the #9 hunk appears in the diff). `future-work.md`'s diff is a clean
+  2-line addition to item 3; items 9 and 10 untouched, no new item filed.
+- **`:app:assembleDebug` — run fresh this loop, not inferred from the empty `src/main/` diff alone.**
+  BUILD SUCCESSFUL, both flavors, 1231 tasks, confirming every external Java consumer this milestone's
+  interop table names — `GpodnetService.java`/`NextcloudSyncService.java` (the two `ISyncService`
+  implementors), `ResponseMapper.java` (the one remaining `readFromJsonObject` Java caller), and the
+  `SynchronizationQueue` accessor call sites — still compiles against the converted module.
+
+### Concerns
+
+None.
+
+### Checklist categories considered and dismissed
+
+- **Characterization tests prove equivalence, not just existence (#1)** — re-run myself: 83/83 green on
+  both variants as genuinely separate `--rerun` invocations, D5's falsification actually re-executed
+  (one site end-to-end, both runs; the other two confirmed mechanism-identical by direct reading) rather
+  than trusted from two prior accounts, and D10's per-file assertion-content diff was already reproduced
+  independently by both the plan and implementation red-team/review stages — I did not re-run the perl
+  extractor a fourth time given three independent prior reproductions and the `!!`-count/AC12-grep
+  re-derivation this loop already covering the file the extractor is blind to. No gap found.
+- **Silent behavior changes from mechanical translation (#2)** — D4's forcing rule (23 nullable-return
+  sites forced at assignment, 6 inline member-forcings on already-non-null receivers inside
+  non-`assertNull` assertions) independently re-verified by direct grep and line reading; no numeric-
+  widening, exception-type, or operator-overloading surprise found beyond what Research and the plan
+  red-team already disclosed and priced (the D9-inherited nullability tax). No new instance found.
+- **Public API breakage (#3)** — `git diff 5f816b768 -- src/main/` and `-- build.gradle` both empty,
+  reconfirmed fresh against origin/develop; `:app:assembleDebug` run fresh this loop, green, both
+  flavors. `ISyncService.kt` still carries `@Throws`/`@JvmSuppressWildcards`, `SynchronizationQueue.kt`
+  still carries `@JvmStatic`, `EpisodeAction.kt`'s nullable returns unchanged — all confirmed by the
+  empty diff, not by trusting the Plan's "no production file changes" framing. No finding.
+- **Coverage gaps left unaddressed (#4)** — README #9's rewritten text and the `javap` re-proof (re-run
+  fresh this loop) are exactly the compensating evidence for conventions #6a/#6b's lost in-module guard;
+  #4/#5's guard is intact because `ISyncServiceTest.java` is confirmed byte-identical and still compiles
+  (both test variants green). No new gap found beyond what D2/D6/OQ2/OQ3 already disclose.
+- **`gradle-kts`/`di`/`concurrency`/`compose`/`navigation` tracks** — correctly not assessed; this module
+  has no UI, no DI wiring, no threading construct, and `build.gradle` confirmed byte-for-byte untouched.
+- **Milestone/scope creep (#9)** — `git diff --stat 5f816b768` matches File Scope exactly (8 renames +
+  4 doc files); no test added/removed/renamed/split (83 stays 83, per-class rows match row-for-row on
+  both variants); no architecture change; `ISyncServiceTest.java`'s dead `Arrays.asList`/
+  `Collections.emptyList()` calls untouched, correctly out of scope. No finding.
+
+### Summary
+
+Every claim this task named for independent re-derivation held up under fresh execution, not a third
+reading of two convergent accounts: `ISyncServiceTest.java` is genuinely byte-identical to a freshly
+fetched `origin/develop`'s merge-base (confirmed by SHA-256, not just `git diff`'s emptiness) and its
+four tests genuinely reduce to a stub asserting itself once the compile-time oracle is stripped, verified
+by tracing each assertion to its own stub's inputs; D5's falsification was actually re-run this loop —
+mutated the fixture, watched the shipped `!!` form fail with a real `NullPointerException` and the
+softened `?.` form pass vacuously on the same test, then reverted clean — rather than trusted from two
+prior identical-sounding accounts; the `!!` inventory recounts to exactly 29 (28+1) with the one doubled
+line at `EpisodeActionJsonTest.kt:385` independently located, not read off a table; diff scope against a
+freshly fetched `origin/develop` is exactly the 8 renames plus 4 doc files, nothing under `src/main/` or
+touching `build.gradle`; both test variants are 83/83 fresh, run as genuinely separate invocations; all
+seven `javap` rows reproduce fresh against a rebuilt classpath, including the `SimpleDateFormat.format
+(Date)` binding on untouched production bytecode; the AC15 fix is comment-only across all 5 touched files
+by direct hunk-by-hunk reading; and `:app:assembleDebug` is green fresh, confirming the public-API-non-
+break claim directly rather than by inference. No new finding. **Approved for PR.**
