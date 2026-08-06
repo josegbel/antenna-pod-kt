@@ -1198,3 +1198,358 @@ files: zero `//` or `/**` lines remain that don't already exist in a Java origin
 compare test files against, and none remain). Nothing found here is being flagged back to the planner
 or reviewer as worth preserving as an exception to `AGENTS.md`'s rule; the rule was applied as written.
 
+## Code Review Verdict
+_By: migration-code-reviewer | 2026-08-06 | Loop 1 of max 3_
+
+### Verdict
+REQUEST CHANGES
+
+### Summary of verification performed
+
+Everything below was independently re-derived against source and against live command output in this
+session — nothing was taken on the Implementation Notes' word.
+
+- **Scope.** `git diff --cached --name-only origin/develop` reproduced and matches File Scope exactly:
+  the 4 renamed pairs, 9 new test files, `ui/preferences/build.gradle`, `ui/preferences/README.md`, and
+  the 3 spec/checkpoint docs. Nothing else touched.
+- **D1 / branch state.** `git rev-parse HEAD origin/develop` are identical (`18f6b20ba`); `git merge-base
+  --is-ancestor af93320b1 origin/develop` prints "M14 present." Branch is genuinely fresh off an
+  up-to-date `origin/develop` containing PR #20, exactly as D1 requires. No commit was made (`git
+  status` shows everything staged, not committed), consistent with the pipeline's "never commit unless
+  asked" rule and the Implementation Notes' own disclosure of that.
+- **Tests, re-run, not trusted.** `:ui:preferences:testFreeDebugUnitTest --rerun` and
+  `:testPlayDebugUnitTest --rerun` both BUILD SUCCESSFUL; summed the per-class JUnit XML reports myself
+  (not the console tail) — **38/38, 0 failures, 0 errors, on both flavors**, matching the claimed
+  per-class table row for row.
+- **`:app:assembleDebug`** — BUILD SUCCESSFUL, confirming the four untouched `:app` guard files still
+  compile against the converted classes.
+- **`:ui:preferences:ktlintCheck`** — BUILD SUCCESSFUL, `ktlintMainSourceSetCheck` and
+  `ktlintTestSourceSetCheck` both genuinely `UP-TO-DATE` (i.e. actually executed and passed), not
+  `SKIPPED`/`NO-SOURCE`.
+- **`:ui:preferences:checkstyle :ui:preferences:lint`** (module-scoped, per the disclosed reasoning that
+  the bare repo-wide command fails on `origin/develop` for unrelated reasons) — BUILD SUCCESSFUL.
+- **AC13's rescoped grep** — ran all four `grep -F`/`grep -nF` lines verbatim against the actual
+  `GpodderAuthenticationFragment.kt`: `error.cause!!.message` → 1, `error.message` → 1,
+  `error.cause?.message` → 0, `error.` → 2 hits (login handler first, `createDevice` second). Discriminates
+  exactly as designed.
+- **The `!!` reconciliation (49 vs. the Plan's 37) — independently re-derived from scratch, not accepted
+  on the self-report.** Ran `grep -o '!!' | wc -l` per file myself: `AuthenticationDialog.kt` 0,
+  `GpodderAuthenticationFragment.kt` 12, `NextcloudAuthenticationFragment.kt` 7,
+  `SynchronizationPreferencesFragment.kt` 30 — sums to 49, matching the disclosure exactly. Then read
+  every one of the 13 additional (and 1 fewer) sites against `git show HEAD:...java` for all three files
+  and checked each claim by hand:
+  - `MaterialAlertDialogBuilder(getContext())` and `new ArrayAdapter<>(getContext(), ...)` are unguarded
+    in the Java originals in all three files where `context!!` appears (`GpodderAuthenticationFragment`
+    `:onCreateDialog`, `NextcloudAuthenticationFragment` `:onCreateDialog`/`:onNextcloudAuthError`,
+    `SynchronizationPreferencesFragment.chooseProviderAndLogin` ×2) — confirmed genuine preserved crashes.
+  - `getDialog().setTitle(...)` unguarded in Java (`GpodderAuthenticationFragment.setupHostView`) —
+    confirmed genuine preserved crash.
+  - `getActivity()` passed unguarded straight into `new AuthenticationDialog(activity, ...)` in Java's
+    `SynchronizationPreferencesFragment.setupScreen`, where the Java constructor took a raw unannotated
+    `Context` — confirmed; the claim that this becomes a forced `!!` only because `AuthenticationDialog`'s
+    Kotlin constructor (Step 8, D9) is now precisely typed, one statement earlier than where
+    `MaterialAlertDialogBuilder`'s own `@NonNull Context` would otherwise fail, is accurate and honestly
+    characterized as "same underlying condition, one statement earlier," not a fabricated crash.
+  - `getItem(position)` unguarded in Java's `chooseProviderAndLogin` adapter — confirmed; matches the
+    Loop 2 red-team's own independently-derived finding about `ArrayAdapter.getItem()`'s nullability.
+  - The three `nextcloudLoginFlow!!` sites: `startLoginFlow()`'s deref is unguarded in Java but always
+    called immediately after assignment (two call sites, both `nextcloudLoginFlow = new
+    NextcloudLoginFlow(...); startLoginFlow();` back to back); the other two are inside Java
+    `if (nextcloudLoginFlow != null)` guards — confirmed no reachable Java NPE at any of the three, and
+    the Kotlin-smart-cast-does-not-cross-a-mutable-`var`-property explanation is the correct mechanism.
+  - The second `devices!!` site in `isDeviceInList` and the `selectedDevice!!.id` site in `advance()`'s
+    `STEP_DEVICE` branch: both guarded in Java by an immediately preceding null check, confirmed by
+    reading the Java source directly; the Kotlin explanations (smart-cast invalidated by an intervening
+    call for the mutable `devices` field, and `@Volatile` properties never being smart-cast at all) are
+    both correct, well-established Kotlin behavior.
+  - The `selectedProvider!!` reduction from 2 tokens to 1 (Kotlin smart-casts the local `val` after the
+    first assertion) is correct and does not affect `testUnrecognisedProviderKeyThrowsAfterClearingHeaderTitle`,
+    which I confirmed is still in the green suite and still asserts the header-title discriminator AC10
+    depends on.
+
+  **Every one of the 49 sites is accounted for, correctly categorized, and the underlying Kotlin/Java
+  semantics claimed for each are accurate.** This is a materially larger deviation than the Plan
+  anticipated, but it is honestly and completely disclosed, verifiable line-by-line, and — critically —
+  carries no behavioral-equivalence risk: the characterization tests that exercise the two real crash
+  paths (`testUnrecognisedProviderKeyThrowsAfterClearingHeaderTitle`,
+  `testHostStepClearsCredentialsAndQueueBeforeSettingHostUrl`) pass identically before and after, which I
+  also confirmed via the XML reports rather than the prose claim alone.
+- **Test coverage completeness.** All 27 Research gaps map to named tests with no silent drops: 8+4 tests
+  for gaps 1–12 (`SynchronizationPreferencesFragmentCharacterizationTest`/`LifecycleTest`), 9 tests for
+  gaps 13–15/17–20 (`GpodderAuthenticationFragmentCharacterizationTest`), gap 16 by AC13's grep, 6 tests
+  for gaps 21–24 (`NextcloudAuthenticationFragmentCharacterizationTest`, including one disclosed
+  addition), 4 tests for gaps 25–27 (`AuthenticationDialogCharacterizationTest`) — 38 total, matching the
+  XML-report sum. Read `SynchronizationPreferencesFragmentCharacterizationTest.kt`,
+  `GpodderAuthenticationFragmentCharacterizationTest.kt`, and
+  `NextcloudAuthenticationFragmentCharacterizationTest.kt` in full: every test asserts concrete,
+  observable state (preference title/summary/icon/enabled, dialog field contents, credential values,
+  call-ordering via `RecordingSynchronizationQueue.onCall` hooks, span boundaries and colors, locale
+  hazards live-falsified with a Turkish default locale) — none is a bare invocation with no assertion.
+  This is genuine behavioral-equivalence evidence, not coverage theater.
+- **`GpodderAuthenticationFragment` → `open class` and the two `@SuppressLint("UseRequireInsteadOfGet")`
+  sites.** Confirmed no production code anywhere in the repo subclasses `GpodderAuthenticationFragment` —
+  only the test file's `TestableGpodderAuthenticationFragment` does — so `open` is scoped to exactly what
+  the disclosed reason requires and does not leak a wider public surface than intended. The `@SuppressLint`
+  usage is consistent with D11 rule 2 (never `requireContext()`/`requireActivity()`/`requireView()` at a
+  `!!` site, since they throw a different exception type): `grep -rnE
+  'requireActivity\(\)|requireContext\(\)|requireView\(\)'` over the four converted files returns zero
+  hits, confirmed independently.
+- **AC12, AC14, AC15, AC17, AC18, AC20** — all independently re-run/re-inspected against the actual
+  `.kt` sources and `javap -p` output on the built classes, not the prose claims: `@Volatile` count 3,
+  both `when` expressions retain `else ->`, `AuthenticationDialog`'s constructor descriptor and both
+  hooks' visibility match exactly, `TAG` is a `public static final` field on the outer class (not only
+  `$Companion`), `SynchronizationPreferencesFragment` is a public no-arg-constructible class, and the
+  `apply{}/also{}/let{}/data class/extension-function` grep returns zero hits across all four files.
+- **README.md / future-work file updates (D15/AC22)** — read both diffs in full; phrased as long-term
+  module conventions with no milestone numbers or task-file references, as required.
+- **No credential values, TODO/FIXME, dead code, or unused-import residue** found in the diff.
+
+### Findings
+
+- **Severity:** MAJOR
+- **Class:** Convention
+- **File:line:** `ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/GpodderAuthenticationFragment.kt:55-56`, `NextcloudAuthenticationFragment.kt:30-31,109-110`, `SynchronizationPreferencesFragment.kt:38-40,76-78,155-157,171-173,185-189,208-211,240-242`
+- **Finding:** This repo's `AGENTS.md` states, under a section explicitly marked "vital, always follow" and "STRICTLY FOLLOW... NEVER DEVIATE FROM THEM": *"Do not add any comments to the code you write, but also do not remove comments that are already in the code."* The four converted production files contain roughly 30 lines of newly-added explanatory comments that do not exist in the Java originals — I diffed each one against `git show HEAD:...java` to confirm none is carried over (the two comments that *are* carried over, `SynchronizationPreferencesFragment.kt:160` "Do not call from onCreate..." and `GpodderAuthenticationFragment.kt:209-210` "devices names must be of a certain form...", are correctly preserved and are **not** part of this finding). This is not a one-off slip: it recurs at every `@SuppressLint("UseRequireInsteadOfGet")` site (6 times, nearly identical wording each time) and at both blocks inside the `chooseProviderAndLogin` adapter. It's also a deviation from this exact portfolio's own established practice — I checked every already-migrated `.kt` file in `:net:sync:service-interface` and `:event` (Milestones 9–14) and found zero added comments across 21 of 23 files (the other two carry 0 and pre-existing-only). The content of these comments is also redundant: the developer independently and correctly captured this exact rationale in `ui/preferences/README.md`'s new "Kotlin conversion conventions" section (conventions #2 and #4), which is the D15-sanctioned, AGENTS.md-compliant place for it. Several of the test files (e.g. `GpodderAuthenticationFragmentCharacterizationTest.kt:36-39`, `NextcloudAuthenticationFragmentCharacterizationTest.kt` various) carry similar explanatory comments not present as scaffolding elsewhere in the portfolio's test suites; the same rule applies to them as "code you write," though the production-file instances are the higher-value fix since they duplicate content the README already carries.
+- **Suggested fix:** Strip the added comments from the four production files (the README already documents the rationale, so nothing is lost). For the test files, remove the explanatory comments where the test name and structure already make the intent clear, or fold anything genuinely load-bearing into the README instead. Re-run `ktlintCheck` and the two flavors' unit tests after the edit — comment removal should not change hashes in a way that affects any assertion, but re-verify per this pipeline's own AC7 discipline before re-submitting.
+
+### Recommendation
+
+Everything else in this implementation — scope, the branch/ancestry check, both flavors' test results,
+`:app:assembleDebug`, ktlint/checkstyle/lint, the AC13 rescoped grep, the full `!!` reconciliation (49
+vs. 37, verified site-by-site against source), the `open class` change, the `@SuppressLint` usage, and
+every spot-checked acceptance criterion — held up under independent re-derivation with no discrepancies
+found. This is an unusually rigorous and honestly self-reported implementation, and the major disclosed
+deviation (49 vs. 37 `!!` operators) is real, completely accounted for, and carries no
+behavioral-equivalence risk. The one MAJOR finding is a mechanical, low-risk fix (delete comment lines,
+re-verify green) that does not touch scope, correctness, or any test assertion — send back to
+`android-migration-developer` to strip the added comments per `AGENTS.md`'s explicit rule, then
+re-invoke this review.
+
+## Code Review Verdict
+_By: migration-code-reviewer | 2026-08-06 | Loop 2 of max 3_
+
+### Verdict
+REQUEST CHANGES
+
+### Summary of verification performed
+
+Independently re-verified the Loop 1 fix rather than trusting the "Post-review correction" self-report.
+
+- **Cited locations actually gone.** `git diff -- ui/preferences/src/main/java/.../synchronization/` shows
+  exactly 30 deleted lines across the three cited files and 0 added lines: 2 in
+  `GpodderAuthenticationFragment.kt` (the `onCreateDialog` `!!`-justification comment), 4 in
+  `NextcloudAuthenticationFragment.kt` (the same comment at `onCreateDialog` and
+  `onNextcloudAuthError`), 24 in `SynchronizationPreferencesFragment.kt` (six `!!`-justification blocks
+  plus the two `ArrayAdapter`/`holder`/`getItem` rationale comments). Every deletion lands exactly at the
+  line ranges the Post-review correction claims — no more, no less. `AuthenticationDialog.kt` has no diff
+  at all, consistent with the disclosure that it carried nothing to remove.
+- **No pre-existing Java comment was collaterally removed.** Extracted every comment line from each
+  file's Java original (`git show 18f6b20ba:.../<File>.java`) and from the current working-tree `.kt`
+  file and compared content, not just line count: `GpodderAuthenticationFragment` — class KDoc
+  ("Guides the user through the authentication process") and the two-line `devices names must be of a
+  certain form...` comment both present, verbatim, in both; `NextcloudAuthenticationFragment` — class
+  KDoc present in both; `SynchronizationPreferencesFragment` — the `// Do not call from onCreate; ActionBar
+  is not yet available at that point` comment present in both, unchanged; `AuthenticationDialog` — class
+  KDoc present in both. Every file's surviving comment set maps 1:1 to its Java original, same content,
+  same relative position. Nothing was lost in the strip.
+- **Tests, re-run myself, not trusted.** `:ui:preferences:testFreeDebugUnitTest --rerun` and
+  `:testPlayDebugUnitTest --rerun` both BUILD SUCCESSFUL; summed the per-class JUnit XML reports directly
+  (not console tail) — **38/38, 0 failures, 0 errors, both flavors**, identical per-class breakdown to
+  the disclosure (`AuthenticationDialogCharacterizationTest` 4, `AuthenticationDialogJavaInteropTest` 1,
+  `GpodderAuthenticationFragmentCharacterizationTest` 9, `NextcloudAuthenticationFragmentCharacterizationTest`
+  6, `SynchronizationPreferencesFragmentCharacterizationTest` 8, `SynchronizationPreferencesFragmentLifecycleTest`
+  4, `SyncSettingsHarnessSmokeTest` 6). Report timestamps confirm both runs are fresh, not stale artifacts
+  from before the comment strip.
+- **`:app:assembleDebug`** — BUILD SUCCESSFUL, the four untouched `:app` guard files still compile
+  against the comment-stripped classes.
+- **`:ui:preferences:ktlintCheck`** — BUILD SUCCESSFUL; confirmed `ktlintMainSourceSetCheck` genuinely
+  ran (`UP-TO-DATE` from this session's own prior invocation, i.e. actually executed and passed, not
+  `SKIPPED`/`NO-SOURCE`).
+- **`:ui:preferences:checkstyle :ui:preferences:lint`** — BUILD SUCCESSFUL; `checkstyle` `UP-TO-DATE`
+  (Java-only source set, untouched by this fix, as expected); `lint` genuinely executed and passed.
+
+The Loop 1 fix itself is correct, complete, and honestly reported. No new finding against the production
+files.
+
+### Findings
+
+- **Severity:** MAJOR
+- **Class:** Convention
+- **File:line:** `ui/preferences/src/test/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/GpodderAuthenticationFragmentCharacterizationTest.kt:35-40,108-112,127-129,146-148,166-167,176-177`, `NextcloudAuthenticationFragmentCharacterizationTest.kt:85-87,89,115-116,121,140,146-148,149-152,162-163`, `SynchronizationPreferencesFragmentCharacterizationTest.kt:86-87,117-118,157-158,234-235,237-238`, `SynchronizationPreferencesFragmentLifecycleTest.kt:67-69,80,88,115,126`, `SyncSettingsHarnessSmokeTest.kt:24-29,114-118`, `AuthenticationDialogCharacterizationTest.kt:79-80,87-88`, `RecordingSynchronizationQueue.kt:7-11,15-19`
+- **Finding:** This is the same rule from Loop 1's finding — `AGENTS.md`'s "vital, always follow" /
+  "STRICTLY FOLLOW... NEVER DEVIATE" instruction, *"Do not add any comments to the code you write"* —
+  applied to a different set of files. The Post-review correction fixed exactly the three production
+  files Loop 1's `File:line` list named, and disclosed, in its own words, that it deliberately left the
+  test files alone: *"The test-file comments are left for a separate pass if `migration-code-reviewer`
+  re-raises them in loop 2."* Loop 1's finding prose already answered this question once — *"the same rule
+  applies to them as 'code you write,' though the production-file instances are the higher-value
+  fix"* — so this is not a new interpretation, it is the same one, now being formally raised because it
+  was deferred rather than resolved. Unlike the production files, these are not J2K conversions of an
+  existing Java file (this module had zero tests before this milestone, per Research), so every one of
+  these comments is unambiguously new prose with no possible "carried over from the original" defense —
+  if anything, the case for removal is cleaner here than in the production files. The volume is also
+  larger than what Loop 1 flagged: roughly 60 lines of newly-written explanatory comments across 7 of the
+  8 new test files (`SyncSettingsTestHost.kt` is the only one with none), including two full KDoc blocks
+  (`RecordingSynchronizationQueue.kt:7-11`, `SyncSettingsHarnessSmokeTest.kt:24-29`) and multiple
+  same-shaped narrative comments explaining *why* an assertion discriminates one behavior from another
+  (e.g. `SynchronizationPreferencesFragmentLifecycleTest.kt:126` — `"onStop() sets subtitle to "" (empty
+  string), distinct from updateActionBar()'s null"`). AGENTS.md draws no distinction between production
+  and test code, or between converted and newly-authored files, for this rule — "the code you write" is
+  unconditional, and I am not reading a carve-out into it that the text does not contain.
+- **Suggested fix:** Same mechanical fix as Loop 1: strip the added comments from all 7 files listed
+  above. Where a comment states something genuinely load-bearing about test methodology that would
+  otherwise be lost (e.g. `SyncSettingsHarnessSmokeTest.kt`'s note on which of D5's fallbacks the harness
+  needed), that fact already belongs in Implementation Notes/AC2 per the Plan's own requirement — it does
+  not need to also live as a comment in the test file. Test names and structure carry the rest (e.g.
+  `testHostStepClearsCredentialsAndQueueBeforeSettingHostUrl` does not need a comment restating that it
+  proves ordering; the name already does). Re-run both flavors' `--rerun` unit tests, `ktlintCheck`
+  (this time expect `ktlintTestSourceSetCheck` to genuinely re-execute, not `UP-TO-DATE`, since test files
+  are what's changing), and confirm AC7's test-suite-frozen discipline is not violated — comment-only
+  edits should not change any `git hash-object` value tracked for non-comment content, but re-verify
+  rather than assume, exactly as the Loop 1 fix correctly did for the production files.
+
+### Recommendation
+
+The Loop 1 fix is verified correct and complete on its own terms — nothing further needed on the three
+production files or `AuthenticationDialog.kt`. The single remaining MAJOR finding is the direct
+continuation of the same rule, applied to the 7 test files the Post-review correction knowingly deferred.
+This is loop 2 of max 3: one more corrective pass closes it. Send back to `android-migration-developer`
+to strip the added comments from the test files listed above, re-verify both flavors green plus
+`ktlintCheck` (test source set this time), and re-invoke this review for loop 3.
+
+## Code Review Verdict
+_By: migration-code-reviewer | 2026-08-06 | Loop 3 of max 3_
+
+### Verdict
+APPROVE
+
+### Summary of verification performed
+
+This is the final loop this pipeline allows. Everything below was independently re-derived against the
+working tree and live command output — nothing was taken on the "Post-review correction (loop 2)"
+subsection's word alone.
+
+- **Cited comments actually gone, all 7 files.** Grepped every one of `GpodderAuthenticationFragmentCharacterizationTest.kt`,
+  `NextcloudAuthenticationFragmentCharacterizationTest.kt`, `SynchronizationPreferencesFragmentCharacterizationTest.kt`,
+  `SynchronizationPreferencesFragmentLifecycleTest.kt`, `SyncSettingsHarnessSmokeTest.kt`,
+  `AuthenticationDialogCharacterizationTest.kt`, `RecordingSynchronizationQueue.kt` for `//`, `/*`, `/**`
+  and leading-`*` lines. The only hits in any file are `https://` substrings inside string literals
+  (`GpodderAuthenticationFragmentCharacterizationTest.kt:100,109,116,167,189,205`,
+  `NextcloudAuthenticationFragmentCharacterizationTest.kt:83,92,109,123,156,203`,
+  `SynchronizationPreferencesFragmentCharacterizationTest.kt:97,140,150`) — not comments. Both full KDoc
+  blocks loop 2 cited (`RecordingSynchronizationQueue.kt:7-11`, `SyncSettingsHarnessSmokeTest.kt:24-29`) are
+  gone; zero comment lines remain in any of the 7 files.
+- **`SyncSettingsTestHost.kt` genuinely untouched.** Read the file directly (12 lines, package/imports/one
+  `onCreate` override) — no comment ever existed here across any loop, consistent with loop 2's own note
+  that this was "the only clean one of the 8," and consistent with the correction's claim that it needed
+  no edit this round.
+- **The uncited `// -> STEP_X` removal in `GpodderAuthenticationFragmentCharacterizationTest.kt` — read the
+  entire file in full, not just the diff.** All 9 `invokeAdvance(fragment)` call sites
+  (`:118,169,173,175,191,195,210,214,216`) are present, correctly placed relative to the field/method
+  reflection setup around them, and every one of the file's 9 `@Test` methods
+  (`testFirstStepIsSetUpWithoutFlipping` … `testDialogIsNonCancellableInBothSenses`) has its full assertion
+  block intact — `assertEquals`/`assertNull`/`assertTrue`/`assertFalse`/`assertThrows` calls, string
+  literals (`"newUser"`, `"newPass"`, `"dev1"`, `"https://gpodder.net"`, `"bad!user"`, etc.), and the
+  `TestableGpodderAuthenticationFragment` inner class all read exactly as expected for the behavior each
+  test name describes. Nothing beyond trailing comment text was removed; this was mechanically a
+  comment-only cleanup, matching the disclosure.
+- **Tests, re-run myself, not trusted.** `:ui:preferences:testFreeDebugUnitTest --rerun` and
+  `:testPlayDebugUnitTest --rerun` both BUILD SUCCESSFUL. Summed the per-class JUnit XML reports directly
+  (not console tail) for both flavors — **38/38, 0 failures, 0 errors**, identical per-class breakdown on
+  both: `AuthenticationDialogCharacterizationTest` 4, `AuthenticationDialogJavaInteropTest` 1,
+  `GpodderAuthenticationFragmentCharacterizationTest` 9, `NextcloudAuthenticationFragmentCharacterizationTest`
+  6, `SynchronizationPreferencesFragmentCharacterizationTest` 8, `SynchronizationPreferencesFragmentLifecycleTest`
+  4, `SyncSettingsHarnessSmokeTest` 6 — matches the disclosure exactly. Confirmed the free-flavor XML
+  report timestamp is fresh (post-dates this session's run), not a stale artifact.
+- **`:app:assembleDebug`** — BUILD SUCCESSFUL (`UP-TO-DATE` on the assembly chain, as expected since no
+  production file changed this loop), confirming the four `:app` guard files still compile.
+- **`:ui:preferences:ktlintCheck`** — BUILD SUCCESSFUL. `ktlintTestSourceSetCheck` reported `UP-TO-DATE`
+  in my run (not `SKIPPED`/`NO-SOURCE`), which is the expected signal on a second invocation against
+  unchanged content following the developer's own fresh run — i.e. it corroborates rather than
+  contradicts the correction's claim that the task "genuinely re-executed" the first time against the
+  fixed files. `ktlintMainSourceSetCheck`-equivalent main-set tasks show no violations either.
+- **Scope.** `git status --short` shows exactly the same 22 paths as every prior loop — no file added,
+  removed, or touched outside what Loop 1/Loop 2 already established as File Scope. The one addition to
+  the Loop 2 finding's cited set (the 9 `// -> STEP_X` markers) is inside a file already named in Loop 2's
+  `File:line` list, not a new file, so it does not expand scope.
+- **Production files re-confirmed unaffected.** Grepped all four converted production `.kt` files again;
+  the only comment lines present are the ones Loop 2 already verified as carried over verbatim from the
+  Java originals (`AuthenticationDialog.kt:11` class KDoc, `GpodderAuthenticationFragment.kt:34` class KDoc
+  and `:207-208` the device-name-format comment, `NextcloudAuthenticationFragment.kt:22` class KDoc,
+  `SynchronizationPreferencesFragment.kt:151` the ActionBar-timing comment). Nothing new, nothing lost.
+
+### Findings
+
+None open. No CRITICAL, MAJOR, or MINOR finding against this correction.
+
+### Recommendation
+
+**APPROVE.** All findings from Loop 1 (added comments in the 4 production files) and Loop 2 (added
+comments in 7 of 8 new test files) are verified fixed by independent re-derivation, not by trusting the
+"Post-review correction" self-reports: the cited comments are actually gone, no assertion/call/literal was
+collaterally touched by the additional `// -> STEP_X` cleanup the developer volunteered in
+`GpodderAuthenticationFragmentCharacterizationTest.kt`, `SyncSettingsTestHost.kt` remains genuinely
+untouched across all three loops, both flavors' unit tests are 38/38 green on a fresh re-run I performed
+myself, `:app:assembleDebug` and `:ui:preferences:ktlintCheck` both pass, and scope has not moved beyond
+the 22 paths established since Loop 1. Combined with Loop 1's clean bill on scope, behavioral-equivalence
+proof, acceptance-criteria coverage, and correctness (all re-verified again this loop where re-touched,
+none of which regressed), there is nothing left open. This is loop 3 of the max-3 cap and the pipeline
+does not need to escalate to the user — the implementation is ready to proceed to
+`legacy-android-red-team`'s implementation review, then a PR.
+
+## Red-Team Verdict — Implementation
+_By: legacy-android-red-team | 2026-08-06 | Loop 1 of max 2_
+
+### Verdict
+APPROVE
+
+### Independent verification performed this loop
+
+Per this agent's mandate, nothing below was taken on the Implementation Notes' or `migration-code-reviewer`'s word — every claim scoped to behavioral equivalence was re-derived directly against the working tree, the Java originals at `git show 18f6b20ba:<path>`, and live command output.
+
+**The `!!` inventory (49 vs. the Plan's 37) — recounted from scratch, not accepted on either self-report.**
+- `grep -o '!!' <file> | wc -l` run myself against all four `.kt` files: `AuthenticationDialog.kt` 0, `GpodderAuthenticationFragment.kt` 12, `NextcloudAuthenticationFragment.kt` 7, `SynchronizationPreferencesFragment.kt` 30 — sums to 49, matching the disclosure exactly.
+- Read `GpodderAuthenticationFragment.java` and `SynchronizationPreferencesFragment.java` (the two largest files) in full at `18f6b20ba` and diffed every `!!` site in the converted `.kt` against the corresponding Java statement myself, line by line, rather than re-reading the developer's or reviewer's table. Every one of the +13/-1 deviations checks out exactly as characterized: the five `context!!`/`dialog!!` sites (`MaterialAlertDialogBuilder(getContext())`, `getDialog().setTitle(...)`, both unguarded in Java); `activity!!` at `SynchronizationPreferencesFragment.kt:79` (Java passed a raw unannotated `Context` to `AuthenticationDialog`'s old constructor — now precisely typed by Step 8's `D9` conversion, so the same unguarded `getActivity()` fails one statement earlier, not a fabricated crash); `getItem(position)!!` at `:191` (matches this same file's own Loop-2-plan-red-team finding on `ArrayAdapter.getItem()`'s `@Nullable` contract, folded into one call per Java's own single-call-into-a-reused-local shape); the three `nextcloudLoginFlow!!` sites (Kotlin does not smart-cast a mutable class `var` across a null-guard the way Java's unchecked field read didn't need to); the second `devices!!` site in `isDeviceInList` and `selectedDevice!!.id` in `advance()` (both guarded in Java by an immediately preceding null check that Kotlin's smart-cast rules for a mutable/`@Volatile` field don't carry forward); and the `selectedProvider!!` reduction from 2 tokens to 1 (correct — Kotlin smart-casts the local `val` after the first assertion, confirmed by reading `SynchronizationPreferencesFragment.kt:113-118` directly: the forcing statement is still after `preferenceHeader.setTitle("")` at `:116`, so D11 rule 1's ordering guarantee is intact regardless of the token count). **No undisclosed deviation found, and nothing in the reconciliation carries behavioral-equivalence risk** — every additional `!!` either reproduces a real, unguarded Java crash at the same or an equivalent point, or satisfies a Kotlin compile-time invariant with no reachable null value behind it.
+- `grep -rnE 'requireActivity\(\)|requireContext\(\)|requireView\(\)|\?\.'` over all four converted files, run myself: zero hits in every case (D11 rule 2 / AC9 / AC11 all hold).
+
+**The three pinned defects — confirmed preserved, not accidentally fixed, by direct source inspection.**
+- RxJava `Disposable` leak: `grep -n 'Disposable\|\.subscribe(' GpodderAuthenticationFragment.kt` shows both `.subscribe({...}, {...})` calls with no return value stored anywhere in the file — identical to the Java original.
+- `devices` data race: `grep -n 'Volatile\|var devices'` confirms `username`/`password`/`selectedDevice` are `@Volatile` and `devices` is not — exactly the Plan's D12.2 preservation.
+- Adapter recycled-holder-as-field: `holder` is still declared as a field of the anonymous `ArrayAdapter` (now `lateinit var holder: ViewHolder` instead of Java's nullable `ViewHolder holder`) and is still reassigned on every `getView()` call, exactly as D12.3 requires.
+
+**`AuthenticationDialog`'s Java interop surface — verified against source, compiled bytecode, and a live build, not just the disclosed `javap` transcript.**
+- Read both `:app` subclasses directly (`FeedSettingsPreferenceFragment.java:191-210`, `OnlineFeedViewActivity.java:277-296`) — confirmed the anonymous subclass overrides only `onConfirmed`, and `FeedViewAuthenticationDialog` overrides both hooks and calls `super.onCancelled()`, exactly as D8/D9 require, and that `checkDownloadResult`'s first-`ERROR_UNAUTHORIZED` path genuinely reaches the dialog with both `username`/`password` fields null.
+- Ran `./gradlew --console=plain :app:assembleDebug` myself: `BUILD SUCCESSFUL` (`UP-TO-DATE`, i.e., a real prior compile of the four untouched `:app` guard files against the converted classes, not a stale claim).
+- Ran `javap -p` myself against the built `AuthenticationDialog.class`, `GpodderAuthenticationFragment.class`, `NextcloudAuthenticationFragment.class`: constructor descriptor, both hooks' signatures/visibility, and both `TAG` fields as `public static final` on the outer class (not only `$Companion`) all match the disclosed transcript exactly.
+
+**Tests — re-run myself, per-class counts summed from the JUnit XML, not the console tail.** `./gradlew --console=plain :ui:preferences:testPlayDebugUnitTest --rerun`: `BUILD SUCCESSFUL`, and summing `tests="…"` / `failures="…"` across every XML report gives **38/38, 0 failures** — matching AC1/AC3's claim independently.
+
+**Characterization tests spot-checked directly against the Java source they claim to pin**, not trusted from green output alone. Read `SynchronizationPreferencesFragmentCharacterizationTest.kt`, `GpodderAuthenticationFragmentCharacterizationTest.kt`, `NextcloudAuthenticationFragmentCharacterizationTest.kt`, and `AuthenticationDialogCharacterizationTest.kt` in full:
+- `testUnrecognisedProviderKeyThrowsAfterClearingHeaderTitle` genuinely drives fragment attach to the crash and asserts `header.title == ""` afterward — the exact discriminator D11 rule 1 needs, confirmed by reading the assertion, not just the test name.
+- `testLogoutOrderingAndCrossClassSideEffect` hooks `RecordingSynchronizationQueue.clear()` and asserts, at that exact moment, that credentials are already null but the selected-provider key is *not yet* cleared — reproducing the Java's `SynchronizationCredentials.clear() → SynchronizationQueue.clear() → … → setSelectedSyncProvider(null)` ordering exactly, confirmed against `SynchronizationPreferencesFragment.kt:100-108`.
+- `testDeviceIdUsesLocaleUsLowercase` sets the JVM default locale to Turkish and asserts the device ID lowercases `"I"` to `"i"` (not the Turkish dotless `"ı"`) — a genuine, non-trivial falsification proving `Locale.US` is hard-coded rather than defaulted, matching `generateDeviceId`'s `lowercase(Locale.US)`.
+- `testErrorDialogAppliesSpanToSecondHalfOnly` asserts the exact span boundaries and reads `span.foregroundColor` to confirm `0x88888888.toInt()` reproduces the same bit pattern as Java's raw hex int literal — I independently confirmed this is a correct, non-trivial translation (Kotlin's hex literal parses `0x88888888` as `Long` since it exceeds `Int` range as a positive value; `.toInt()` truncates to the identical two's-complement bit pattern Java's overflowing `int` literal produces).
+- AC13's gap-16 discriminator re-run against the actual file: `error.cause!!.message` → 1 (`setupLoginView`, the gap-16 handler), `error.message` → 1 (`createDevice`, correctly preserved unchanged), `error.cause?.message` → 0, `error.` → 2 hits in order. Confirmed by reading both handlers directly at `GpodderAuthenticationFragment.kt:134-139` and `:187-192`.
+
+None of the above is coverage theater — every test read asserts concrete, observable state or ordering, not a bare method call.
+
+**Scope.** `git diff --name-only origin/develop`, run myself: exactly 22 paths, matching File Scope precisely — no `res/`, no `app/`, no `libs.versions.toml`, no `common.gradle`, no `AnimatedPreferenceFragment.java`.
+
+### Categories considered and dismissed with no new finding
+
+`di`/`concurrency`/`compose`/`navigation` tracks (nothing bled in — confirmed no `Hilt`/coroutines/`Flow`/`ComposeView`/Navigation import anywhere in the diff); the RxJava3/EventBus/`PreferenceFragmentCompat`/XML surface (confirmed behaviorally untouched — `res/xml/preferences_synchronization.xml` and all nine dialog layouts are absent from the diff, EventBus registration/sticky-subscribe semantics unchanged in `SynchronizationPreferencesFragment.kt:44,50,54`); the two credential-commit orderings (gpodder vs. Nextcloud, D7 gaps 7/18/21 — read both `advance()`'s `STEP_DEVICE` branch and `onNextcloudAuthenticated` directly, orderings differ from each other exactly as Research documented and each matches its own Java original); `GpodderAuthenticationFragment` becoming `open class` (confirmed via repo-wide grep that only the test file's `TestableGpodderAuthenticationFragment` subclasses it — no production surface widened); the `@SuppressLint("UseRequireInsteadOfGet")` usage (confirmed necessary and correctly scoped — Android Lint's suggested `requireContext()`/`requireView()` would throw `IllegalStateException` instead of the `NullPointerException` D11 rule 2 requires, and the six sites map exactly to the ActionBar/context/view `!!` sites already in the table).
+
+The comment-convention findings from `migration-code-reviewer`'s three loops are explicitly out of scope for this review per this task's own instruction and are not re-litigated here.
+
+### Concerns
+
+- **Severity:** MINOR
+- **Class:** Silent behavior changes from mechanical translation
+- **Concern:** In `SynchronizationPreferencesFragment.kt`'s `chooseProviderAndLogin` adapter (`:189`), the recycled-view-holder restoration changed from Java's `holder = (ViewHolder) convertView.getTag();` to Kotlin's `holder = view.tag as ViewHolder`. Java's raw cast tolerates `getTag()` returning `null` (the cast of `null` to any reference type succeeds in Java; the resulting `null` would only surface as a `NullPointerException` later, at the first `holder.title`/`holder.icon` access). Kotlin's `as ViewHolder` (a non-null-asserting cast, since `holder` is now `lateinit var holder: ViewHolder`, a non-nullable type) throws `ClassCastException` immediately if `view.tag` is `null`, rather than passing `null` through. This is a genuine, if narrow, exception-type divergence at a code path this milestone's own discipline (D12.3) requires to stay a preserved defect rather than be "fixed." **It carries no practical behavioral-equivalence risk today**: the adapter is only ever handed `convertView`s it created itself (every view it returns has its tag set via `view.tag = holder` on the same call that created it), so `view.tag` can never actually be `null` when `view != null` in this adapter's real usage — the same "control-flow invariant with no reachable Java crash behind it" category the developer already used (and disclosed) for five other sites in this same reconciliation. The difference here is that this specific cast-semantics change was not itself named in the Implementation Notes' disclosure, which describes the `holder`/`ViewHolder` field change only as "same field-reuse (recycling) behavior, only the null-representation changed" — accurate for the null-handling of the *field*, but silent on the changed exception-type behavior of the *cast* if that field's source (`view.tag`) were ever unexpectedly null.
+- **Evidence:** `git show 18f6b20ba:ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SynchronizationPreferencesFragment.java` (`holder = (ViewHolder) convertView.getTag();`) vs. `ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SynchronizationPreferencesFragment.kt:189` (`holder = view.tag as ViewHolder`); Implementation Notes, "Deviations from plan — summary," item 5 (describes only the null-representation change, not the cast-exception-type change).
+- **Suggested mitigation:** Not blocking, and not worth a second implementation loop by itself. When this file is next touched (Milestone 17's ViewModel work is the natural point), either fold one sentence into `ui/preferences/README.md`'s "Kotlin conversion conventions" section noting the cast is a non-null assertion by construction (matching how D15 already documents the other `!!` sites' intent), or leave as-is — the practical risk is effectively zero given the adapter's closed usage, and no characterization test needs to change either way.
+
+### Recommendation
+
+**APPROVE.** Every claim this review's mandate specifically asked it to scrutinize — the 49-vs-37 `!!` deviation, the three pinned defects, the `AuthenticationDialog` interop surface, and the characterization tests' actual assertions — was independently re-derived from the working tree, the Java originals, and live command output (own `grep`, own `javap`, own two full test/build runs), not accepted from either the developer's or the code reviewer's self-report. Everything held up exactly as disclosed, with correct, honest, and specific justification for every deviation from the Plan's D11 table. The one new finding (the `ViewHolder` cast's exception-type divergence) is MINOR, carries no practical behavioral-equivalence risk given the adapter's closed usage pattern, and does not require a second loop — it's a documentation nicety for whichever milestone next touches this file, not a defect in this diff. This milestone is ready for a PR to be opened against `develop`.
+
