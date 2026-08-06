@@ -21,12 +21,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.shadows.ShadowDialog
 
-/**
- * D5's five proof-obligation tests. This is the first Fragment/Activity-driving test anywhere in
- * this repo (D3), so each test proves one specific harness mechanism works before any behavior
- * is characterized on top of it. Which of D5's fallbacks were needed is recorded in Implementation
- * Notes, not here.
- */
 @RunWith(RobolectricTestRunner::class)
 class SyncSettingsHarnessSmokeTest {
 
@@ -111,11 +105,6 @@ class SyncSettingsHarnessSmokeTest {
 
     @Test
     fun testAntennapodHttpClientConstructionUnderRobolectric() {
-        // D5's fourth proof obligation, recorded as observed fact per AC2, not assumed: it is
-        // NOT constructible under default Robolectric setup. getHttpClient() -> newBuilder()
-        // constructs an okhttp3.Cache(cacheDirectory, ...) with a null cacheDirectory (nothing in
-        // this test process calls AntennapodHttpClient.setCacheDirectory), and Cache's constructor
-        // rejects a null directory. This confirms D5's row-4 fallback is required for gap 14's test.
         org.junit.Assert.assertThrows(NullPointerException::class.java) {
             AntennapodHttpClient.getHttpClient()
         }

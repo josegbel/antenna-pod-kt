@@ -82,11 +82,7 @@ class NextcloudAuthenticationFragmentCharacterizationTest {
 
         fragment.onNextcloudAuthenticated("https://nc.example.com", "someUser", "somePass")
 
-        // Unlike the gpodder path (where queue.clear() runs in the host step, long before any
-        // provider is selected), here setSelectedSyncProvider() has already run by the time
-        // queue.clear() fires -- proving this path's different interleaving.
         assertEquals(SynchronizationProvider.NEXTCLOUD_GPODDER.identifier, selectedProviderKeyAtClearTime)
-        // credentials.clear() has already run by queue.clear() time, same as the gpodder path.
         assertNull(usernameAtClearTime)
         assertNull(passwordAtClearTime)
 
@@ -112,13 +108,10 @@ class NextcloudAuthenticationFragmentCharacterizationTest {
 
         fragment.onNextcloudAuthenticated("https://nc.example.com", "someUser", "somePass")
 
-        // Not resumed: dismiss() must be deferred, not called immediately -- the dialog is
-        // still showing.
         assertNotNull(fragment.dialog)
         assertTrue(fragment.dialog!!.isShowing)
 
         controller.resume()
-        // onResume()'s shouldDismiss check now dismisses it.
         assertFalse(fragment.dialog?.isShowing ?: false)
     }
 
@@ -137,19 +130,11 @@ class NextcloudAuthenticationFragmentCharacterizationTest {
         fragment.onSaveInstanceState(outState)
         assertEquals(fakeFlow.savedState, outState.getStringArrayList(extraLoginFlowKey()))
 
-        // A fragment with no login flow yet started must not write the key at all.
         val (_, freshFragment) = showFragment()
         val freshOutState = Bundle()
         freshFragment.onSaveInstanceState(freshOutState)
         assertNull(freshOutState.getStringArrayList(extraLoginFlowKey()))
 
-        // Restoring: onCreateDialog's guard (savedInstanceState has EXTRA_LOGIN_FLOW) must be
-        // entered when the key is present. onCreateDialog is public, so it can be invoked
-        // directly against an attached-but-not-yet-shown fragment instance.
-        // AntennapodHttpClient.getHttpClient() is not constructible under Robolectric (Step 1's
-        // D5 finding, re-used exactly as gap 14's test uses it) -- restoration crashes there,
-        // which is itself proof the guard let execution reach
-        // NextcloudLoginFlow.fromInstanceState's call site.
         val savedInstanceState = Bundle()
         savedInstanceState.putStringArrayList(extraLoginFlowKey(), fakeFlow.savedState)
         val activity = Robolectric.buildActivity(SyncSettingsTestHost::class.java).setup().get()
@@ -159,8 +144,6 @@ class NextcloudAuthenticationFragmentCharacterizationTest {
             restoredFragment.onCreateDialog(savedInstanceState)
         }
 
-        // The negative case: no EXTRA_LOGIN_FLOW key means the guard is not entered, and the
-        // dialog is created normally with no crash.
         val normalFragment = NextcloudAuthenticationFragment()
         activity.supportFragmentManager.beginTransaction().add(normalFragment, "nextcloud-normal").commitNow()
         val normalDialog = normalFragment.onCreateDialog(Bundle())

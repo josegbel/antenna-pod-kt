@@ -1119,3 +1119,82 @@ fix since they duplicate content the README already carries." This correction ad
 cited locations, all of which are in the four production files. The test-file comments are left for a
 separate pass if `migration-code-reviewer` re-raises them in loop 2.
 
+### Post-review correction (`migration-code-reviewer` loop 2, Convention MAJOR finding)
+
+`migration-code-reviewer`'s loop 2 (`## Code Review Verdict`, MAJOR finding) re-raised exactly the
+question loop 1 deferred: the same `AGENTS.md` rule — *"Do not add any comments to the code you
+write"* — applied to the 7 new characterization/support test files that loop 1's fix deliberately
+left untouched (`SyncSettingsTestHost.kt` was, and remains, the only clean one of the 8). Unlike the
+four production files, none of these test files has a Java original to carry anything over from —
+this module had zero tests before this milestone (per Research) — so every comment in them is
+unambiguously new prose with no "preserved from the original" defense available. The reviewer's own
+words closed the scoping question rather than reopening it: *"AGENTS.md draws no distinction between
+production and test code, or between converted and newly-authored files, for this rule... I am not
+reading a carve-out into it that the text does not contain."* No re-scoping needed here either — same
+rule, same mechanical fix, now applied file-by-file to the set loop 2 named.
+
+**Fix applied.** Removed every newly-added comment from all 7 cited files, leaving `SyncSettingsTestHost.kt`
+untouched (it had nothing to remove):
+
+- `GpodderAuthenticationFragmentCharacterizationTest.kt` — removed the class KDoc (gap/reflection
+  rationale), the `AntennapodHttpClient`/D5 fallback comment ahead of the host-step `assertThrows`
+  block, the `setupLoginView()`/hosturl-precondition comment, the RxJava-short-circuit comment, the
+  device-dedupe rationale comment, and the Turkish-locale-hazard comment. Beyond the reviewer's exact
+  citations, this file also carried nine short trailing `// -> STEP_X` annotations on `invokeAdvance(fragment)`
+  calls that the loop 2 finding did not individually cite but that are equally new, unconditionally
+  in scope under the same rule, and inconsistent with the zero-added-comments outcome the loop 1 fix
+  already established for the four production files (verified by re-grepping them: no new comments
+  survive there either) — removed those too, for consistency with that precedent rather than leaving
+  them for a hypothetical loop 3 to re-raise.
+- `NextcloudAuthenticationFragmentCharacterizationTest.kt` — removed the differing-interleaving-from-gpodder
+  comment, the credentials-clear-timing comment, the deferred-dismiss-not-resumed comment, the
+  onResume-shouldDismiss comment, the fresh-fragment-no-key comment, the onCreateDialog-guard/D5
+  restoration comment block, and the negative-case comment.
+- `SynchronizationPreferencesFragmentCharacterizationTest.kt` — removed both header-click-listener
+  rationale comments (logged-out and logged-in cases), the `HtmlCompat.FROM_HTML_MODE_LEGACY` rendering
+  comment, and both logout-ordering rationale comments.
+- `SynchronizationPreferencesFragmentLifecycleTest.kt` — removed the sticky-event-discrimination
+  comment, the not-connected precondition comment, the "not even the subtitle" comment, the
+  disconnected-branch comment, and the onStop-empty-vs-null comment.
+- `SyncSettingsHarnessSmokeTest.kt` — removed the class KDoc (D5 proof-obligation framing) and the
+  `AntennapodHttpClient`/D5 row-4-fallback comment block.
+- `AuthenticationDialogCharacterizationTest.kt` — removed both null-initial-value rationale comments.
+- `RecordingSynchronizationQueue.kt` — removed both KDoc blocks (class-level and `onCall`-property-level).
+
+Re-diffed every one of the 7 files against the working tree after the edit (`git diff --`, not the
+prose claim alone): every hunk removes comment lines only — no assertion, call, field name, or
+string literal changed anywhere. `SyncSettingsTestHost.kt` has no diff, consistent with it never
+having carried a comment.
+
+Re-verified per the reviewer's suggested fix and this pipeline's AC7 discipline, using this module's
+actual flavoured task names (not a generic `testDebugUnitTest`):
+- `./gradlew --console=plain :ui:preferences:testFreeDebugUnitTest --rerun` — BUILD SUCCESSFUL,
+  **38/38, 0 failures, 0 errors** (summed from the per-class JUnit XML reports under
+  `ui/preferences/build/test-results/testFreeDebugUnitTest/`, not the console tail): `AuthenticationDialogCharacterizationTest`
+  4, `AuthenticationDialogJavaInteropTest` 1, `GpodderAuthenticationFragmentCharacterizationTest` 9,
+  `NextcloudAuthenticationFragmentCharacterizationTest` 6, `SynchronizationPreferencesFragmentCharacterizationTest`
+  8, `SynchronizationPreferencesFragmentLifecycleTest` 4, `SyncSettingsHarnessSmokeTest` 6 — identical
+  per-class breakdown to every prior run, confirming a comment-only change moved nothing.
+- `./gradlew --console=plain :ui:preferences:testPlayDebugUnitTest --rerun` — BUILD SUCCESSFUL, same
+  **38/38, 0 failures, 0 errors**, identical per-class breakdown, read from
+  `ui/preferences/build/test-results/testPlayDebugUnitTest/`.
+- `./gradlew :app:assembleDebug` — BUILD SUCCESSFUL (`UP-TO-DATE` on the app-assembly chain, since
+  test source changes don't invalidate it), confirming this correction did not disturb the four
+  untouched `:app` guard files' ability to compile.
+- `./gradlew :ui:preferences:ktlintCheck` — BUILD SUCCESSFUL. This time, as the loop 2 finding
+  anticipated, `ktlintTestSourceSetCheck` genuinely re-executed (not `UP-TO-DATE`) since the test
+  source set is what changed; `ktlintMainSourceSetCheck` reported `UP-TO-DATE`, correctly reflecting
+  that no production file was touched by this fix.
+
+As expected for a comment-only change, no test hash, assertion, or characterization-test count moved:
+this correction touches no code identifier, no production file, and no other Decision, Step, or
+Acceptance Criterion. Scope is exactly the 7 test files loop 2 named plus the additional short
+`GpodderAuthenticationFragmentCharacterizationTest.kt` step-marker comments flagged above for
+consistency — no file added or removed, `SyncSettingsTestHost.kt` still untouched.
+
+With this, all newly-written comments in production and test code alike have been removed across the
+full diff (re-confirmed by grep across all four converted `.kt` production files and all 7 fixed test
+files: zero `//` or `/**` lines remain that don't already exist in a Java original — there are none to
+compare test files against, and none remain). Nothing found here is being flagged back to the planner
+or reviewer as worth preserving as an exception to `AGENTS.md`'s rule; the rule was applied as written.
+

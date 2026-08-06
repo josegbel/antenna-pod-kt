@@ -64,9 +64,6 @@ class SynchronizationPreferencesFragmentLifecycleTest {
         SynchronizationSettings.setLastSynchronizationAttemptSuccess(true)
         SynchronizationSettings.updateLastSynchronizationAttempt()
 
-        // sync_status_started is neither sync_status_error nor sync_status_success, so its
-        // branch sets the raw message text -- discriminating it from what updateActionBar()
-        // (called just before EventBus registration, in onStart) would otherwise have set.
         EventBus.getDefault().postSticky(SyncServiceEvent(R.string.sync_status_started))
 
         val activity = Robolectric.buildActivity(SyncSettingsTestHost::class.java).setup().get()
@@ -77,7 +74,6 @@ class SynchronizationPreferencesFragmentLifecycleTest {
 
     @Test
     fun testSyncEventIgnoredWhenNotConnected() {
-        // Not connected: SynchronizationSettings.setSelectedSyncProvider() is never called.
         val activity = Robolectric.buildActivity(SyncSettingsTestHost::class.java).setup().get()
         attach(activity)
         assertNull(activity.supportActionBar!!.subtitle)
@@ -85,7 +81,6 @@ class SynchronizationPreferencesFragmentLifecycleTest {
         EventBus.getDefault().post(SyncServiceEvent(R.string.sync_status_error))
         shadowOf(Looper.getMainLooper()).idle()
 
-        // "not even the subtitle" -- still null, not touched by the ignored event.
         assertNull(activity.supportActionBar!!.subtitle)
     }
 
@@ -112,7 +107,6 @@ class SynchronizationPreferencesFragmentLifecycleTest {
 
     @Test
     fun testOnStartSetsTitleAndOnStopSetsEmptySubtitleWhereasDisconnectedSetsNull() {
-        // Not connected -- updateActionBar() takes the disconnected branch, subtitle = null.
         val controller = Robolectric.buildActivity(SyncSettingsTestHost::class.java)
         val activity = controller.setup().get()
         attach(activity)
@@ -123,7 +117,6 @@ class SynchronizationPreferencesFragmentLifecycleTest {
         controller.pause().stop()
         shadowOf(Looper.getMainLooper()).idle()
 
-        // onStop() sets subtitle to "" (empty string), distinct from updateActionBar()'s null.
         assertEquals("", activity.supportActionBar!!.subtitle)
     }
 }

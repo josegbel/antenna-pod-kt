@@ -32,12 +32,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 
-/**
- * Pins gaps 13-15 and 17-20. currentStep/service/username/password/selectedDevice/devices are
- * private (D7), so this file drives them via reflection rather than the host-step's UI, which is
- * itself blocked under Robolectric by AntennapodHttpClient's Cache incompatibility (Step 1's D5
- * finding, re-used directly by testHostStepClearsCredentialsAndQueueBeforeSettingHostUrl below).
- */
 @RunWith(RobolectricTestRunner::class)
 class GpodderAuthenticationFragmentCharacterizationTest {
 
@@ -105,11 +99,6 @@ class GpodderAuthenticationFragmentCharacterizationTest {
         val chooseHostButton = dialog.findViewById<Button>(R.id.chooseHostButton)
         serverUrlText.setText("https://custom.host")
 
-        // AntennapodHttpClient.getHttpClient() is not constructible under Robolectric (Step 1's
-        // D5 fallback finding, testAntennapodHttpClientConstructionUnderRobolectric) -- the click
-        // handler throws while constructing GpodnetService, *after* the credential-clearing and
-        // host-url-setting statements have already run. The ordering this pins survives that
-        // construction failure exactly as D5 anticipated.
         assertThrows(NullPointerException::class.java) {
             chooseHostButton.performClick()
         }
@@ -124,12 +113,9 @@ class GpodderAuthenticationFragmentCharacterizationTest {
 
     @Test
     fun testUsernameValidationRunsBeforeAnyNetworkCall() {
-        // setupLoginView() dereferences SynchronizationCredentials.getHosturl() unguarded
-        // (kotlin finding 4) -- safe in production only because setupHostView() always sets it
-        // first. Set it here too, matching that real precondition.
         SynchronizationCredentials.setHosturl("https://gpodder.net")
         val fragment = showFragment()
-        invokeAdvance(fragment) // STEP_HOSTNAME -> STEP_LOGIN, wires up the credentials view
+        invokeAdvance(fragment)
         val dialog = fragment.dialog!!
         val usernameField = dialog.findViewById<EditText>(R.id.etxtUsername)
         val passwordField = dialog.findViewById<EditText>(R.id.etxtPassword)
@@ -143,9 +129,6 @@ class GpodderAuthenticationFragmentCharacterizationTest {
 
         assertEquals(context.getString(R.string.gpodnetsync_username_characters_error), errorText.text.toString())
         assertEquals(View.VISIBLE, errorText.visibility)
-        // Validation short-circuited before the login.setEnabled(false)/progressBar-visible pair
-        // that only runs once a network call is actually kicked off -- proving no RxJava
-        // subscription (and hence no network call) was ever created.
         assertTrue(loginButton.isEnabled)
         assertEquals(View.GONE, progressBar.visibility)
     }
@@ -163,8 +146,6 @@ class GpodderAuthenticationFragmentCharacterizationTest {
             )
         )
         val generated = invokeGenerateDeviceName(fragment)
-        // baseName is taken (matched by id), "$baseName (1)" is taken (matched by caption, not
-        // id) -- proving isDeviceInList dedupes on *either* signal, not just one.
         assertEquals("$baseName (2)", generated)
     }
 
@@ -173,8 +154,6 @@ class GpodderAuthenticationFragmentCharacterizationTest {
         val fragment = showFragment()
         val previousDefault = Locale.getDefault()
         try {
-            // Turkish locale lower-cases "I" to dotless "ı", not "i" -- the classic JVM
-            // locale hazard. generateDeviceId must use Locale.US explicitly, ignoring this.
             Locale.setDefault(Locale.forLanguageTag("tr"))
             val id = invokeGenerateDeviceId(fragment, "MY DEVICE I")
             assertEquals("my_device_i", id)
@@ -187,13 +166,13 @@ class GpodderAuthenticationFragmentCharacterizationTest {
     fun testCredentialCommitOrderOnDeviceToFinishTransition() {
         SynchronizationCredentials.setHosturl("https://gpodder.net")
         val fragment = showFragment()
-        invokeAdvance(fragment) // -> STEP_LOGIN
+        invokeAdvance(fragment)
         setField(fragment, "username", "newUser")
         setField(fragment, "password", "newPass")
         setField(fragment, "devices", mutableListOf<GpodnetDevice>())
-        invokeAdvance(fragment) // -> STEP_DEVICE
+        invokeAdvance(fragment)
         setField(fragment, "selectedDevice", GpodnetDevice("dev1", "Device One", "mobile", 0))
-        invokeAdvance(fragment) // -> STEP_FINISH, commits credentials
+        invokeAdvance(fragment)
 
         assertEquals(
             SynchronizationProvider.GPODDER_NET.identifier,
@@ -209,11 +188,11 @@ class GpodderAuthenticationFragmentCharacterizationTest {
     fun testPartialWizardLeavesCredentialsUntouched() {
         SynchronizationCredentials.setHosturl("https://gpodder.net")
         val fragment = showFragment()
-        invokeAdvance(fragment) // -> STEP_LOGIN
+        invokeAdvance(fragment)
         setField(fragment, "username", "newUser")
         setField(fragment, "password", "newPass")
         setField(fragment, "devices", mutableListOf<GpodnetDevice>())
-        invokeAdvance(fragment) // -> STEP_DEVICE, no commit yet -- wizard abandoned here
+        invokeAdvance(fragment)
 
         assertNull(SynchronizationCredentials.getUsername())
         assertNull(SynchronizationCredentials.getPassword())
@@ -228,13 +207,13 @@ class GpodderAuthenticationFragmentCharacterizationTest {
         val fragment = TestableGpodderAuthenticationFragment()
         fragment.showNow(activity.supportFragmentManager, GpodderAuthenticationFragment.TAG)
 
-        invokeAdvance(fragment) // -> STEP_LOGIN
+        invokeAdvance(fragment)
         setField(fragment, "username", "newUser")
         setField(fragment, "password", "newPass")
         setField(fragment, "devices", mutableListOf<GpodnetDevice>())
-        invokeAdvance(fragment) // -> STEP_DEVICE
+        invokeAdvance(fragment)
         setField(fragment, "selectedDevice", GpodnetDevice("dev1", "Device One", "mobile", 0))
-        invokeAdvance(fragment) // -> STEP_FINISH
+        invokeAdvance(fragment)
 
         recordingQueue.onCall = { name -> if (name == "syncImmediately") fragment.eventLog.add("syncImmediately") }
         val dialog = fragment.dialog!!

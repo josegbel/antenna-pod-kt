@@ -76,16 +76,12 @@ class AuthenticationDialogCharacterizationTest {
 
     @Test
     fun testNullInitialValuesLeaveFieldsUntouched() {
-        // Neither field is seeded, and construction must not crash if the null-check guard
-        // that makes this safe (AuthenticationDialog.java:25-30) is dropped during conversion.
         val dialog = buildDialog(usernameInitialValue = null, passwordInitialValue = null)
         val usernameField = dialog.findViewById<EditText>(R.id.usernameEditText)!!
         val passwordField = dialog.findViewById<EditText>(R.id.passwordEditText)!!
         assertEquals("", usernameField.text.toString())
         assertEquals("", passwordField.text.toString())
 
-        // A non-null value, by contrast, must actually be seeded -- this is what discriminates
-        // "guarded by an if" from "the field is always empty regardless of the argument".
         val seededDialog = buildDialog(usernameInitialValue = "someone", passwordInitialValue = "secret")
         val seededUsername = seededDialog.findViewById<EditText>(R.id.usernameEditText)!!
         val seededPassword = seededDialog.findViewById<EditText>(R.id.passwordEditText)!!

@@ -83,8 +83,6 @@ class SynchronizationPreferencesFragmentCharacterizationTest {
         assertFalse(logout.isEnabled)
         assertNull(logout.summary)
 
-        // header's click listener opens the provider chooser -- proven by observing a new
-        // dialog appear, titled with the chooser's own title, after performClick().
         val before = ShadowDialog.getLatestDialog()
         header.performClick()
         val after = ShadowDialog.getLatestDialog()
@@ -114,8 +112,6 @@ class SynchronizationPreferencesFragmentCharacterizationTest {
         assertTrue(forceFullSync.isEnabled)
         assertTrue(logout.isEnabled)
 
-        // header's click listener is null when logged in -- proven by performClick() producing
-        // no new dialog.
         val before = ShadowDialog.getLatestDialog()
         header.performClick()
         val after = ShadowDialog.getLatestDialog()
@@ -154,8 +150,6 @@ class SynchronizationPreferencesFragmentCharacterizationTest {
             "https://gpodder.net"
         )
         assertTrue(rawStringResource.contains("\n\n"))
-        // HtmlCompat.FROM_HTML_MODE_LEGACY renders the source string's literal "\n\n" as line
-        // breaks in the Spanned's plain-text rendering rather than collapsing it away.
         assertTrue(summary.toString().contains("someone"))
         assertTrue(summary.toString().contains("gpodder.net"))
     }
@@ -231,11 +225,7 @@ class SynchronizationPreferencesFragmentCharacterizationTest {
         val logout = fragment.findPreference<Preference>(KEY_LOGOUT)!!
         logout.performClick()
 
-        // SynchronizationCredentials.clear() must have already run by the time
-        // SynchronizationQueue.clear() is called -- credentials.username is already null.
         assertNull(usernameAtQueueClearTime)
-        // setSelectedSyncProvider(null) must NOT have run yet -- the old provider key is still
-        // observable at queue.clear() time.
         assertEquals(SynchronizationProvider.GPODDER_NET.identifier, selectedProviderKeyAtQueueClearTime)
 
         assertEquals(listOf("clear"), recordingQueue.calls)
