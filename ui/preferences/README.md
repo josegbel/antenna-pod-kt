@@ -54,3 +54,11 @@ Conventions a future edit to this slice must preserve:
 8. **Test tasks in this module are flavoured** (`testFreeDebugUnitTest` / `testPlayDebugUnitTest`), because
    this module applies `playFlavor.gradle`. CI only runs the Play-flavoured task for this module — run both
    locally.
+9. **`screen/synchronization/` also contains a Robolectric native-graphics capture test.** Any test in this
+   source set that draws a real `Bitmap` from a view hierarchy must carry
+   `@GraphicsMode(GraphicsMode.Mode.NATIVE)` at class level — the default `LEGACY` mode silently fills the
+   bitmap with an opaque solid colour instead of failing, so a bare `assertNotNull(bitmap)` or
+   non-transparent-pixel check passes on a completely blank render. Assert on distinct-colour count (or an
+   equivalent content check) instead. Such a test's PNG output is written under this module's `build/`
+   directory on every run and is never asserted byte-for-byte against a checked-in image — cross-machine
+   rendering determinism (font rasterisation, in particular) is not guaranteed.
