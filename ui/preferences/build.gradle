@@ -1,5 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.ktlint)
 }
 apply from: "../../common.gradle"
 apply from: "../../playFlavor.gradle"
@@ -48,4 +50,13 @@ dependencies {
     implementation libs.okhttp.urlconnection
     implementation libs.eventbus
     implementation libs.preferencesearch
+
+    testImplementation libs.junit
+    testImplementation libs.robolectric
+    testImplementation libs.androidx.test.core
+    // Deviation from Plan D4, disclosed in Implementation Notes: RecordingSynchronizationQueue
+    // (D6) must override SynchronizationQueue.enqueueEpisodePlayed(FeedMedia?, Boolean), and
+    // :model is only ever an `implementation` dependency repo-wide (verified: never `api`), so
+    // it is not on this module's test compile classpath transitively via :net:sync:service-interface.
+    testImplementation project(':model')
 }
