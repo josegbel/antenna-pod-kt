@@ -35,9 +35,6 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
         updateScreen()
     }
 
-    // the Fragment "require" helper would throw IllegalStateException instead of the NullPointerException
-    // the Java original throws here (D11 rule 2) -- the forced non-null assertions below are
-    // deliberate, not oversight.
     @SuppressLint("UseRequireInsteadOfGet")
     override fun onStart() {
         super.onStart()
@@ -73,9 +70,6 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
         }
     }
 
-    // the Fragment "require" helpers would throw IllegalStateException instead of the
-    // NullPointerException the Java original throws here (D11 rule 2) -- the forced non-null
-    // assertions below are deliberate, not oversight.
     @SuppressLint("UseRequireInsteadOfGet")
     private fun setupScreen() {
         val activity = activity
@@ -152,9 +146,6 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
         }
     }
 
-    // the Fragment "require" helper would throw IllegalStateException instead of the NullPointerException
-    // the Java original throws here (D11 rule 2) -- the forced non-null assertions below are
-    // deliberate, not oversight.
     @SuppressLint("UseRequireInsteadOfGet")
     private fun updateActionBar() {
         // Do not call from onCreate; ActionBar is not yet available at that point
@@ -168,9 +159,6 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
         }
     }
 
-    // the Fragment "require" helper would throw IllegalStateException instead of the NullPointerException
-    // the Java original throws here (D11 rule 2) -- the forced non-null assertion below is
-    // deliberate, not oversight.
     @SuppressLint("UseRequireInsteadOfGet")
     private fun chooseProviderAndLogin() {
         val builder = MaterialAlertDialogBuilder(context!!)
@@ -182,11 +170,6 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
             R.layout.alertdialog_sync_provider_chooser,
             providers
         ) {
-            // holder stays a field of the adapter, reassigned on every getView() call --
-            // the recycled-holder-as-field pattern is a pinned, pre-existing defect (D12.3),
-            // preserved as-is. lateinit (not a nullable, forcibly-asserted var) because it is
-            // always assigned before read in both branches below, from a layout id that exists
-            // at compile time -- the same D13 rationale already applied to viewFlipper/viewBinding.
             lateinit var holder: ViewHolder
 
             inner class ViewHolder {
@@ -205,10 +188,6 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
                 } else {
                     holder = view.tag as ViewHolder
                 }
-                // getItem() is @Nullable on ArrayAdapter, but this adapter's backing data is
-                // always SynchronizationProvider.values() (see `providers` above), so it can
-                // never actually be null here -- forced once, matching Java's single call into
-                // the local `synchronizationProvider`, used twice below.
                 val synchronizationProvider = getItem(position)!!
                 holder.title.setText(getProviderSummary(synchronizationProvider))
                 holder.icon.setImageResource(getProviderIcon(synchronizationProvider))
@@ -237,9 +216,6 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
     private val selectedSyncProviderKey: String?
         get() = SynchronizationSettings.getSelectedSyncProviderKey()
 
-    // the Fragment "require" helper would throw IllegalStateException instead of the NullPointerException
-    // the Java original throws here (D11 rule 2) -- the forced non-null assertions below are
-    // deliberate, not oversight.
     @SuppressLint("UseRequireInsteadOfGet")
     private fun updateLastSyncReport(successful: Boolean, lastTime: Long) {
         val status = String.format(

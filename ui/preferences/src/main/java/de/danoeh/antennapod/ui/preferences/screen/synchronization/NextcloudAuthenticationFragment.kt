@@ -27,8 +27,6 @@ class NextcloudAuthenticationFragment : DialogFragment(), NextcloudLoginFlow.Aut
     private var nextcloudLoginFlow: NextcloudLoginFlow? = null
     private var shouldDismiss = false
 
-    // the Fragment "require" helper would throw IllegalStateException instead of the NullPointerException
-    // the Java original throws here (D11 rule 2) -- the forced non-null assertion below is deliberate, not oversight.
     @SuppressLint("UseRequireInsteadOfGet")
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val dialog = MaterialAlertDialogBuilder(context!!)
@@ -106,8 +104,6 @@ class NextcloudAuthenticationFragment : DialogFragment(), NextcloudLoginFlow.Aut
         }
     }
 
-    // the Fragment "require" helper would throw IllegalStateException instead of the NullPointerException
-    // the Java original throws here (D11 rule 2) -- the forced non-null assertion below is deliberate, not oversight.
     @SuppressLint("UseRequireInsteadOfGet")
     override fun onNextcloudAuthError(errorMessage: String?) {
         viewBinding.loginProgressContainer.visibility = View.GONE

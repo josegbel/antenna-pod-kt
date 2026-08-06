@@ -52,8 +52,6 @@ open class GpodderAuthenticationFragment : DialogFragment() {
     private var selectedDevice: GpodnetDevice? = null
     private var devices: List<GpodnetDevice>? = null
 
-    // the Fragment "require" helper would throw IllegalStateException instead of the NullPointerException
-    // the Java original throws here (D11 rule 2) -- the forced non-null assertion below is deliberate, not oversight.
     @SuppressLint("UseRequireInsteadOfGet")
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val dialog = MaterialAlertDialogBuilder(context!!)

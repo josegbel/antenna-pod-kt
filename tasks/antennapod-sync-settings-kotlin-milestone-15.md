@@ -1055,3 +1055,67 @@ consumer still compiles.
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
 ```
 
+### Post-review correction (`migration-code-reviewer` loop 1, Convention MAJOR finding)
+
+`migration-code-reviewer`'s loop 1 (`## Code Review Verdict`, MAJOR finding) caught that this
+implementation added roughly 30 lines of newly-written explanatory comments across three of the four
+converted production files, in direct violation of `AGENTS.md`'s "vital, always follow" /
+"STRICTLY FOLLOW... NEVER DEVIATE" rule: *"Do not add any comments to the code you write, but also do
+not remove comments that are already in the code."* The reviewer diffed every comment in the converted
+files against `git show HEAD:...java` and found the same `!!`-justification wording repeated near-verbatim
+at every `@SuppressLint("UseRequireInsteadOfGet")` site and at both blocks inside
+`chooseProviderAndLogin`'s anonymous `ArrayAdapter` — content that duplicates, rather than adds to, the
+rationale already correctly captured in `ui/preferences/README.md`'s new "Kotlin conversion conventions"
+section (conventions #2 and #4). No re-scoping question here: the rule is unambiguous and the fix is
+mechanical, not a judgment call.
+
+**Fix applied.** Removed the newly-added comment blocks at exactly the reviewer-cited locations, leaving
+every already-existing Java comment untouched:
+- `GpodderAuthenticationFragment.kt:55-56` (the `!!`-justification comment ahead of `onCreateDialog`'s
+  `@SuppressLint`) — removed. The class KDoc (originally `:38-40` in the Java) and the `generateDeviceId`
+  device-naming-format comment (originally `:211-212` in the Java) are pre-existing and were left in
+  place, per the reviewer's own note that these two were correctly preserved and not part of the finding.
+- `NextcloudAuthenticationFragment.kt:30-31` and `:109-110` (identical `!!`-justification comment ahead of
+  `onCreateDialog` and `onNextcloudAuthError`) — both removed. The class KDoc is pre-existing and untouched.
+- `SynchronizationPreferencesFragment.kt:38-40, 76-78, 155-157, 171-173, 185-189, 208-211, 240-242` — all
+  seven blocks removed: the six `!!`-justification comments ahead of `onStart`, `setupScreen`,
+  `updateActionBar`, `chooseProviderAndLogin`, and `updateLastSyncReport`, plus the two comments inside the
+  anonymous `ArrayAdapter` (the `holder`-as-field rationale and the `getItem(position)!!` nullability
+  rationale). The pre-existing `// Do not call from onCreate; ActionBar is not yet available at that point`
+  comment (Java `:152`) was left in place.
+- `AuthenticationDialog.kt` — checked directly; carried zero newly-added comments to begin with (only the
+  pre-existing class KDoc), consistent with the reviewer not citing it.
+
+Re-diffed every comment line in all three touched files against each file's Java original after the edit:
+the surviving comment set in each `.kt` file now maps 1:1 to the Java file's comment set, same content,
+same relative position — nothing added, nothing removed that was already there.
+
+Re-verified per the reviewer's suggested fix and this pipeline's AC7 discipline:
+- `./gradlew --console=plain :ui:preferences:testFreeDebugUnitTest --rerun` — BUILD SUCCESSFUL,
+  **38/38, 0 failures, 0 errors** (per-class: `AuthenticationDialogCharacterizationTest` 4,
+  `AuthenticationDialogJavaInteropTest` 1, `GpodderAuthenticationFragmentCharacterizationTest` 9,
+  `NextcloudAuthenticationFragmentCharacterizationTest` 6,
+  `SynchronizationPreferencesFragmentCharacterizationTest` 8, `SynchronizationPreferencesFragmentLifecycleTest`
+  4, `SyncSettingsHarnessSmokeTest` 6 — read from the per-class JUnit XML reports, not the console tail).
+- `./gradlew --console=plain :ui:preferences:testPlayDebugUnitTest --rerun` — BUILD SUCCESSFUL, same
+  **38/38, 0 failures, 0 errors**, identical per-class breakdown.
+- `./gradlew :app:assembleDebug` — BUILD SUCCESSFUL, confirming the four untouched `:app` guard files
+  still compile against the (now comment-stripped) converted classes.
+- `./gradlew :ui:preferences:ktlintCheck` — BUILD SUCCESSFUL; `ktlintMainSourceSetCheck` genuinely
+  re-executed (not `UP-TO-DATE` from before the edit) and passed; `ktlintTestSourceSetCheck` reports
+  `UP-TO-DATE`, correctly reflecting that no test file was touched by this fix.
+- `./gradlew :ui:preferences:checkstyle :ui:preferences:lint` — BUILD SUCCESSFUL; `checkstyle` reports
+  `UP-TO-DATE` (expected — it only inspects Java sources, and this fix touched only `.kt` files); `lint`
+  genuinely ran and reported nothing new.
+
+As expected for a comment-only change, no test hash, assertion, or `!!` count moved: this correction
+touches no code identifier, no test file, and no other Decision, Step, or Acceptance Criterion. Scope
+stays exactly the four production files already in File Scope — no file added or removed.
+
+The reviewer's finding also noted similar explanatory comments in some characterization test files
+(`GpodderAuthenticationFragmentCharacterizationTest.kt`, `NextcloudAuthenticationFragmentCharacterizationTest.kt`)
+as a lower-value, secondary observation, explicitly calling the production-file instances "the higher-value
+fix since they duplicate content the README already carries." This correction addresses the MAJOR finding's
+cited locations, all of which are in the four production files. The test-file comments are left for a
+separate pass if `migration-code-reviewer` re-raises them in loop 2.
+
