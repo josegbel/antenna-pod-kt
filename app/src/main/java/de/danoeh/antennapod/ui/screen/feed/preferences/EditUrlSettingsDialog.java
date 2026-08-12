@@ -48,7 +48,10 @@ public abstract class EditUrlSettingsDialog {
         try {
             DBWriter.updateFeedDownloadURL(original, updated).get();
             feed.setDownloadUrl(updated);
-            FeedUpdateManager.getInstance().runOnce(activityRef.get(), feed);
+            Activity activity = activityRef.get();
+            if (activity != null) {
+                FeedUpdateManager.getInstance().runOnce(activity, feed);
+            }
         } catch (ExecutionException | InterruptedException e) {
             throw new RuntimeException(e);
         }

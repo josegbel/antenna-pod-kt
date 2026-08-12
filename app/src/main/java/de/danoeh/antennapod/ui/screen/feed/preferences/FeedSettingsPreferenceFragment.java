@@ -205,7 +205,10 @@ public class FeedSettingsPreferenceFragment extends PreferenceFragmentCompat {
                         } catch (InterruptedException | ExecutionException e) {
                             e.printStackTrace();
                         }
-                        FeedUpdateManager.getInstance().runOnce(getContext(), feed);
+                        Context context = getContext();
+                        if (context != null) {
+                            FeedUpdateManager.getInstance().runOnce(context, feed);
+                        }
                     }, "RefreshAfterCredentialChange").start();
                 }
             }.show();
