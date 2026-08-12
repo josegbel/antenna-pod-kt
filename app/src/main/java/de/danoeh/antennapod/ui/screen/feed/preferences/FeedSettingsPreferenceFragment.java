@@ -388,7 +388,8 @@ public class FeedSettingsPreferenceFragment extends PreferenceFragmentCompat {
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(
                         () -> EventBus.getDefault().post(new MessageEvent(getString(android.R.string.ok))),
-                        error -> EventBus.getDefault().post(new MessageEvent(error.getLocalizedMessage())));
+                        error -> EventBus.getDefault().post(new MessageEvent(error.getLocalizedMessage() != null
+                                ? error.getLocalizedMessage() : getString(R.string.error_label))));
     }
 
     private static class AddLocalFolder extends ActivityResultContracts.OpenDocumentTree {

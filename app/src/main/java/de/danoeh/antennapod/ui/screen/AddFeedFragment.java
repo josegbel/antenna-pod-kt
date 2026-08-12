@@ -213,7 +213,8 @@ public class AddFeedFragment extends Fragment {
                             ((MainActivity) getActivity()).loadChildFragment(fragment);
                         }, error -> {
                             Log.e(TAG, Log.getStackTraceString(error));
-                            EventBus.getDefault().post(new MessageEvent(error.getLocalizedMessage()));
+                            EventBus.getDefault().post(new MessageEvent(error.getLocalizedMessage() != null
+                                    ? error.getLocalizedMessage() : getString(R.string.error_label)));
                         });
     }
 
