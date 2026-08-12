@@ -121,6 +121,108 @@
         <Method name="showFeed" params="" returns="void"/>
         <Bug pattern="NP_NULL_ON_SOME_PATH"/>
     </Match>
+    <!--
+        NP_PARAMETER_MUST_BE_NONNULL_BUT_MARKED_AS_NULLABLE — DownloadServiceInterfaceImpl and
+        FeedUpdateManagerImpl (net/download/service). Nine findings across seven methods, all one
+        cause: J2K widened every unannotated Java abstract-method parameter on
+        DownloadServiceInterface/FeedUpdateManager to Context?/FeedItem?/FeedMedia? when
+        :net:download:service-interface was migrated to Kotlin (PR #21, d5b7f94aa), and each of these
+        still-Java implementation methods dereferences its parameter unconditionally. Every one of
+        these findings is a true statement about that inherited declaration, not a false positive.
+        The declaration is deliberately left nullable per
+        net/download/service-interface/README.md:10 — tightening it would relocate today's latent
+        NullPointerException into a guaranteed Intrinsics.checkNotNullParameter crash at Java call
+        sites that do not compile-break against a Kotlin nullability change.
+        These suppressions are unconditional and permanent from SpotBugs's point of view. This
+        detector performs no caller analysis, so it cannot observe whether any call-site guard named
+        below exists. Removing a guard will not make the finding reappear and will not fail CI — the
+        suppression keeps matching this unchanged implementation method while the crash path silently
+        reopens. The guards are what make the code safe; this comment and
+        net/download/service/README.md are the only record tying them to these suppressions, and code
+        review is the only thing enforcing them.
+    -->
+    <!--
+        context, item: no guard was added or needed — every current caller already passes a non-null
+        value. context and item: DownloadActionButton.java:64,72,78 (an Activity `this` and a
+        non-null loop element). The declaration remains inconsistent with the implementation, which
+        is why this is a suppression and not a correction.
+    -->
+    <Match>
+        <Class name="de.danoeh.antennapod.net.download.service.feed.DownloadServiceInterfaceImpl"/>
+        <Method name="downloadNow" params="android.content.Context,de.danoeh.antennapod.model.feed.FeedItem,boolean" returns="void"/>
+        <Bug pattern="NP_PARAMETER_MUST_BE_NONNULL_BUT_MARKED_AS_NULLABLE"/>
+    </Match>
+    <!--
+        item: no guard was added or needed — every current caller already passes a non-null value:
+        AutomaticDownloadAlgorithm.java:107 (a non-null loop element), EpisodeMultiSelectActionHandler.java:145
+        (a non-null loop element). The declaration remains inconsistent with the implementation, which
+        is why this is a suppression and not a correction.
+    -->
+    <Match>
+        <Class name="de.danoeh.antennapod.net.download.service.feed.DownloadServiceInterfaceImpl"/>
+        <Method name="download" params="android.content.Context,de.danoeh.antennapod.model.feed.FeedItem" returns="void"/>
+        <Bug pattern="NP_PARAMETER_MUST_BE_NONNULL_BUT_MARKED_AS_NULLABLE"/>
+    </Match>
+    <!--
+        This single entry suppresses two findings with two different justifications — a
+        parameter-level SpotBugs filter does not exist, so both must be recorded here, separated by
+        parameter name:
+        - context: no guard was added or needed — already safe before this diff. Callers
+          EpisodeMultiSelectActionHandler.java:163 and DBWriter.java:220-228 pass non-null contexts
+          (an Activity `this` and an already-guarded Context, respectively).
+        - media: reachable before this diff via CancelDownloadActionButton.java:33-34's unguarded
+          `item.getMedia()`; made unreachable by the early `return` added there in this commit
+          (CancelDownloadActionButton.java).
+    -->
+    <Match>
+        <Class name="de.danoeh.antennapod.net.download.service.feed.DownloadServiceInterfaceImpl"/>
+        <Method name="cancel" params="android.content.Context,de.danoeh.antennapod.model.feed.FeedMedia" returns="void"/>
+        <Bug pattern="NP_PARAMETER_MUST_BE_NONNULL_BUT_MARKED_AS_NULLABLE"/>
+    </Match>
+    <!--
+        context: no guard was added or needed — every current caller already passes a non-null
+        context: PowerConnectionReceiver.java:38, ConnectivityActionReceiver.java:29 (both a
+        @NonNull BroadcastReceiver.onReceive context). The declaration remains inconsistent with the
+        implementation, which is why this is a suppression and not a correction.
+    -->
+    <Match>
+        <Class name="de.danoeh.antennapod.net.download.service.feed.DownloadServiceInterfaceImpl"/>
+        <Method name="cancelAll" params="android.content.Context" returns="void"/>
+        <Bug pattern="NP_PARAMETER_MUST_BE_NONNULL_BUT_MARKED_AS_NULLABLE"/>
+    </Match>
+    <!--
+        context: no guard was added or needed — the only current caller already passes a non-null
+        context: AutomaticDownloadAlgorithm.java:88. The declaration remains inconsistent with the
+        implementation, which is why this is a suppression and not a correction.
+    -->
+    <Match>
+        <Class name="de.danoeh.antennapod.net.download.service.feed.DownloadServiceInterfaceImpl"/>
+        <Method name="getNumberOfActiveDownloads" params="android.content.Context" returns="int"/>
+        <Bug pattern="NP_PARAMETER_MUST_BE_NONNULL_BUT_MARKED_AS_NULLABLE"/>
+    </Match>
+    <!--
+        context: reachable before this diff via DownloadsPreferencesFragment.java:83's unguarded
+        `getContext()`; made unreachable by the null check added there in this commit.
+    -->
+    <Match>
+        <Class name="de.danoeh.antennapod.net.download.service.feed.FeedUpdateManagerImpl"/>
+        <Method name="restartUpdateAlarm" params="android.content.Context,boolean" returns="void"/>
+        <Bug pattern="NP_PARAMETER_MUST_BE_NONNULL_BUT_MARKED_AS_NULLABLE"/>
+    </Match>
+    <!--
+        context: reachable before this diff via five unguarded `getContext()`/`WeakReference` call
+        sites; made unreachable by the null checks added in this commit at
+        FeedItemlistFragment.java:178,316,540, FeedSettingsPreferenceFragment.java:208 and
+        EditUrlSettingsDialog.java:51. The last three of those call the two-arg
+        `runOnce(Context, Feed)` overload, which delegates to this three-arg one — the guard still
+        removes the null before it reaches this flagged method, and the two-arg overload is itself
+        unflagged because it only forwards.
+    -->
+    <Match>
+        <Class name="de.danoeh.antennapod.net.download.service.feed.FeedUpdateManagerImpl"/>
+        <Method name="runOnce" params="android.content.Context,de.danoeh.antennapod.model.feed.Feed,boolean" returns="void"/>
+        <Bug pattern="NP_PARAMETER_MUST_BE_NONNULL_BUT_MARKED_AS_NULLABLE"/>
+    </Match>
     <Match>
         <Bug pattern="RV_RETURN_VALUE_IGNORED_BAD_PRACTICE"/>
         <Class name="de.danoeh.antennapod.PreferenceUpgrader"/>

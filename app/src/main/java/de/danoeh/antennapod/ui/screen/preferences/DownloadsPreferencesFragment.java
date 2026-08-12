@@ -1,5 +1,6 @@
 package de.danoeh.antennapod.ui.screen.preferences;
 
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import androidx.preference.PreferenceManager;
@@ -80,7 +81,10 @@ public class DownloadsPreferencesFragment extends AnimatedPreferenceFragment
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
         if (UserPreferences.PREF_UPDATE_INTERVAL_MINUTES.equals(key)
                 || UserPreferences.PREF_MOBILE_UPDATE.equals(key)) {
-            FeedUpdateManager.getInstance().restartUpdateAlarm(getContext(), true);
+            Context context = getContext();
+            if (context != null) {
+                FeedUpdateManager.getInstance().restartUpdateAlarm(context, true);
+            }
         }
     }
 }

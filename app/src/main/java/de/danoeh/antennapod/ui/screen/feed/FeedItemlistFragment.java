@@ -1,5 +1,6 @@
 package de.danoeh.antennapod.ui.screen.feed;
 
+import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.LightingColorFilter;
 import android.os.Bundle;
@@ -174,8 +175,9 @@ public class FeedItemlistFragment extends Fragment implements AdapterView.OnItem
 
         nextPageLoader = new MoreContentListFooterUtil(viewBinding.moreContent.moreContentListFooter);
         nextPageLoader.setClickListener(() -> {
-            if (feed != null) {
-                FeedUpdateManager.getInstance().runOnce(getContext(), feed, true);
+            Context context = getContext();
+            if (feed != null && context != null) {
+                FeedUpdateManager.getInstance().runOnce(context, feed, true);
             }
         });
         viewBinding.recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
@@ -313,7 +315,10 @@ public class FeedItemlistFragment extends Fragment implements AdapterView.OnItem
                 feed.setPageNr(0);
                 try {
                     DBWriter.resetPagedFeedPage(feed).get();
-                    FeedUpdateManager.getInstance().runOnce(getContext(), feed);
+                    Context context = getContext();
+                    if (context != null) {
+                        FeedUpdateManager.getInstance().runOnce(context, feed);
+                    }
                 } catch (ExecutionException | InterruptedException e) {
                     throw new RuntimeException(e);
                 }
@@ -537,7 +542,10 @@ public class FeedItemlistFragment extends Fragment implements AdapterView.OnItem
         viewBinding.header.butRestore.setVisibility(isArchived ? View.VISIBLE : View.GONE);
 
         if (isNotSubscribed && feed.getLastRefreshAttempt() < System.currentTimeMillis() - 1000L * 3600 * 24) {
-            FeedUpdateManager.getInstance().runOnce(getContext(), feed, true);
+            Context context = getContext();
+            if (context != null) {
+                FeedUpdateManager.getInstance().runOnce(context, feed, true);
+            }
         }
     }
 
