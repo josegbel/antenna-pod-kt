@@ -6,7 +6,7 @@
 > **Blocks:** Milestone 15b (`tasks/antennapod-sync-settings-before-screenshot-milestone-15b.md`, PR #22) — its AC13 CI-gate needs this merged too, alongside the sibling task.
 
 ## Status
-**RED-TEAM APPROVED (Implementation, Loop 2 of max 2, final) — ready for PR.** All 9 Steps complete on branch `fix/net-download-service-nullable-param-spotbugs` (off `origin/develop` at `5ae7d560f`). All 9 SpotBugs findings suppressed (0 `BugInstance` on both `:net:download:service:spotbugsPlayDebug` and `:app:spotbugsPlayDebug`, independently re-verified by the Loop 2 red-team run); 7 call sites guarded across 5 `:app` files; characterization tests green before and after the one testable guard; repo-wide `--continue checkstyle lint` sweep shows only the pre-existing, out-of-scope `:app-wearos` compile failures (D9). Three deviations recorded across the lifecycle: a corrected call-site line number in one `exclude.xml` comment (D7's prose cited `:145`, verified-accurate is `:163`); 6 pre-existing `LocalFeedUpdaterTest` failures confirmed identical on a clean `origin/develop` worktree (unrelated to this diff, out of File Scope, not fixed here); and the Loop 1 implementation red-team's MAJOR finding (the `runOnce` suppression comment claimed "six" unguarded call sites but listed five citations) fixed with a one-word change, independently re-verified in Loop 2.
+**FULL LIFECYCLE COMPLETE THROUGH REVIEW — PR #25 OPEN.** All 9 Steps complete on branch `fix/net-download-service-nullable-param-spotbugs` (off `origin/develop` at `5ae7d560f`), committed and pushed. All 9 SpotBugs findings suppressed (0 `BugInstance` on both `:net:download:service:spotbugsPlayDebug` and `:app:spotbugsPlayDebug`, independently re-verified by the Loop 2 red-team run); 7 call sites guarded across 5 `:app` files; characterization tests green before and after the one testable guard; repo-wide `--continue checkstyle lint` sweep shows only the pre-existing, out-of-scope `:app-wearos` compile failures (D9). PR opened against `develop`: https://github.com/josegbel/antenna-pod-kt/pull/25 — description carries the D9 caveat that this PR does not by itself get `static-analysis` fully green. Awaiting merge.
 
 ## Last updated
 2026-08-12
@@ -22,9 +22,9 @@
 - [x] Red-team implementation Loop 1 (legacy-android-red-team) — 2026-08-12 — **CHALLENGE** (1 MAJOR: `exclude.xml` count/citation mismatch)
 - [x] Implementation fixed in response to Loop 1 (android-migration-developer) — 2026-08-12
 - [x] Red-team implementation Loop 2 (legacy-android-red-team) — 2026-08-12 — **APPROVE** (final loop)
-- [ ] PR opened
+- [x] PR opened — https://github.com/josegbel/antenna-pod-kt/pull/25 (base `develop`). Description carries the D9 caveat.
 - [ ] PR merged
-- [ ] Milestone 15b's branch rebased/merged with `develop` and CI re-checked (alongside the sibling SpotBugs task)
+- [ ] Milestone 15b's branch rebased/merged with `develop` and CI re-checked (alongside the sibling SpotBugs task and `antennapod-fix-app-wearos-compile-error`)
 
 ## Decisions for next session
 - Discovered 2026-08-12 by `migration-code-reviewer` during Loop 1 review of the sibling task's implementation — not part of the Sync Settings vertical-slice sequence (Milestones 15-20), standalone repo hygiene.
@@ -60,6 +60,4 @@ Verdict CHALLENGE, both findings accepted and fixed in place. Neither touched th
 - **Zero test coverage** at all 9 sites — the existing suite deliberately installs `DownloadServiceInterfaceStub` instead of the flagged impls.
 
 ## Resume command
-Fully red-teamed and approved — see `## Red-Team Verdict — Implementation` (both loops) in `tasks/antennapod-fix-net-download-service-spotbugs-debt.md` for the final verification record, and `## Implementation Notes` (including its Loop 1 fix addendum) for the commit message draft, test commands run, characterization-test results, and all three disclosed deviations. Branch `fix/net-download-service-nullable-param-spotbugs` is off `origin/develop` at `5ae7d560f`, working tree has no uncommitted changes beyond this task's own diff plus the two untouched `antennapod-fix-app-wearos-compile-error` spec files (still untracked, not part of this task's diff).
-
-Next step: open the PR. Use the Plan's Objective/Resolved-Decisions section as the PR description per AGENTS.md's PR conventions, reference `Closes:` the originating issue if one exists, and do not claim in the PR that this unblocks Milestone 15b's CI on its own (D9 — the sibling `antennapod-fix-spotbugs-static-analysis-debt` task and the `:app-wearos` compile fix are also required).
+This task's own lifecycle is done through PR: Research → Plan (2 red-team loops) → Implement → Code review → Red-team implementation (2 loops), all approved. PR #25 is open against `develop`. Nothing further to do on this task until either (a) José reviews/merges PR #25, or (b) the two remaining sibling pieces (the already-merged `antennapod-fix-spotbugs-static-analysis-debt`, and the not-yet-started `antennapod-fix-app-wearos-compile-error`) are worked to the point where all three can merge together and Milestone 15b's branch can be rebased for a real green CI signal on AC13. Next concrete step for *this* task is simply: merge PR #25 when ready.
