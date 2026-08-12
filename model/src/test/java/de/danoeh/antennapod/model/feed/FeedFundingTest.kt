@@ -6,6 +6,7 @@ import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -93,6 +94,26 @@ class FeedFundingTest {
     @Test
     fun getPaymentLinksAsStringNullReturnsNull() {
         assertNull(FeedFunding.getPaymentLinksAsString(null))
+    }
+
+    @Test
+    fun extractPaymentLinksAlwaysYieldsNonNullContent() {
+        val oldFormat = FeedFunding.extractPaymentLinks("http://example.com/donate")!!
+        val titleFormat = FeedFunding.extractPaymentLinks(
+            "http://example.com/donate" + FeedFunding.FUNDING_TITLE_SEPARATOR + "Support the show"
+        )!!
+        val multiEntry = FeedFunding.extractPaymentLinks(
+            "http://example.com/a" + FeedFunding.FUNDING_ENTRIES_SEPARATOR + "http://example.com/b"
+        )!!
+        val blankTitleToken = FeedFunding.extractPaymentLinks(
+            "http://example.com/a" + FeedFunding.FUNDING_TITLE_SEPARATOR + "   "
+        )!!
+
+        for (list in listOf(oldFormat, titleFormat, multiEntry, blankTitleToken)) {
+            for (funding in list) {
+                assertNotNull(funding.content)
+            }
+        }
     }
 
     @Test

@@ -25,3 +25,7 @@ Conventions established by the kotlin-track migration, and expected to survive f
   can make and that is not expressible in Kotlin at all. Converting any of these three files does not
   fail loudly — it silently deletes the one module-local, compiler-enforced guard on the `@JvmField`/
   `@JvmStatic` contract described above. Leave them as the last Java files in this module.
+- `MessageEvent.message` is non-null by contract, not merely by convention — the constructor throws
+  `NullPointerException` if `null` is passed. Any producer forwarding a possibly-null value (e.g.
+  `Throwable.getLocalizedMessage()`, which is nullable) must supply its own fallback string before
+  constructing a `MessageEvent`.

@@ -40,17 +40,86 @@
         <Bug pattern="MS_SHOULD_BE_FINAL"/>
         <Class name="de.danoeh.antennapod.net.common.UserAgentInterceptor"/>
     </Match>
+    <!--
+        Restored per D4 rollback (tasks/antennapod-fix-spotbugs-static-analysis-debt.md), then
+        narrowed to method scope per red-team Loop 1 (Implementation): removing the original
+        class-wide entry surfaced a real, pre-existing, previously-masked finding unrelated to this
+        task's 7 named findings — NP_NONNULL_PARAM_VIOLATION, null passed for
+        BottomSheetCallback.onSlide/onStateChanged in MainActivity.handleNavIntent(). Scoped to this
+        one method — MainActivity.java is out of File Scope for this task; not fixed here.
+    -->
     <Match>
+        <Class name="de.danoeh.antennapod.activity.MainActivity"/>
+        <Method name="handleNavIntent" params="" returns="void"/>
         <Bug pattern="NP_NONNULL_PARAM_VIOLATION"/>
-        <Class name="de.danoeh.antennapod.activity.MainActivity"/>
     </Match>
+    <!--
+        Restored per D4 rollback (tasks/antennapod-fix-spotbugs-static-analysis-debt.md), then
+        narrowed to method scope per red-team Loop 1 (Implementation): removing the original
+        class-wide entry surfaced a real, pre-existing, previously-masked finding unrelated to this
+        task's 7 named findings — NP_NONNULL_PARAM_VIOLATION, null passed for
+        BottomSheetCallback.onSlide/onStateChanged in
+        MainActivity.onRestoreInstanceState(Bundle). Scoped to this one method — MainActivity.java
+        is out of File Scope for this task; not fixed here.
+    -->
     <Match>
-        <Bug pattern="NP_NULL_ON_SOME_PATH"/>
         <Class name="de.danoeh.antennapod.activity.MainActivity"/>
+        <Method name="onRestoreInstanceState" params="android.os.Bundle" returns="void"/>
+        <Bug pattern="NP_NONNULL_PARAM_VIOLATION"/>
+    </Match>
+    <!--
+        Restored per D4 rollback (tasks/antennapod-fix-spotbugs-static-analysis-debt.md), then
+        narrowed to method scope per red-team Loop 1 (Implementation): removing the original
+        class-wide entry surfaced a real, pre-existing, previously-masked finding unrelated to this
+        task's 7 named findings — NP_NONNULL_PARAM_VIOLATION, null passed for
+        BottomSheetCallback.onSlide/onStateChanged in MainActivity.setPlayerVisible(boolean). Scoped
+        to this one method — MainActivity.java is out of File Scope for this task; not fixed here.
+    -->
+    <Match>
+        <Class name="de.danoeh.antennapod.activity.MainActivity"/>
+        <Method name="setPlayerVisible" params="boolean" returns="void"/>
+        <Bug pattern="NP_NONNULL_PARAM_VIOLATION"/>
+    </Match>
+    <!--
+        Restored per D4 rollback (tasks/antennapod-fix-spotbugs-static-analysis-debt.md), then
+        narrowed to method scope per red-team Loop 1 (Implementation): removing the original
+        class-wide entry surfaced a real, pre-existing, previously-masked finding unrelated to this
+        task's 7 named findings — NP_NULL_ON_SOME_PATH, possible null pointer dereference of
+        MainActivity.drawerLayout in
+        MainActivity.setupToolbarToggle(MaterialToolbar, boolean). Scoped to this one method —
+        MainActivity.java is out of File Scope for this task; not fixed here.
+    -->
+    <Match>
+        <Class name="de.danoeh.antennapod.activity.MainActivity"/>
+        <Method name="setupToolbarToggle" params="com.google.android.material.appbar.MaterialToolbar,boolean" returns="void"/>
+        <Bug pattern="NP_NULL_ON_SOME_PATH"/>
     </Match>
     <Match>
         <Bug pattern="NP_NULL_ON_SOME_PATH"/>
         <Class name="de.danoeh.antennapod.model.feed.FeedMedia"/>
+    </Match>
+    <!--
+        False positive: QueueEvent is an action-discriminated union; item is non-null exactly for
+        REMOVED/IRREVERSIBLE_REMOVED/MOVED, the only producers of which are
+        DBWriter.java:247,506,581,619. SpotBugs cannot correlate the enum discriminant with the
+        field, so it flags the worst case across all nine actions. Scoped to this one overload —
+        QueueFragment declares five onEventMainThread methods.
+    -->
+    <Match>
+        <Class name="de.danoeh.antennapod.ui.screen.queue.QueueFragment"/>
+        <Method name="onEventMainThread" params="de.danoeh.antennapod.event.QueueEvent" returns="void"/>
+        <Bug pattern="NP_NULL_ON_SOME_PATH"/>
+    </Match>
+    <!--
+        False positive: FeedFunding.content is "" and never null on every production path (pinned
+        by FeedFundingTest.extractPaymentLinksAlwaysYieldsNonNullContent). The .isEmpty() check at
+        FeedInfoFragment:214 is correct as written; a != null guard would suppress the
+        R.string.support_podcast substitution for the common "" case.
+    -->
+    <Match>
+        <Class name="de.danoeh.antennapod.ui.screen.feed.FeedInfoFragment"/>
+        <Method name="showFeed" params="" returns="void"/>
+        <Bug pattern="NP_NULL_ON_SOME_PATH"/>
     </Match>
     <Match>
         <Bug pattern="RV_RETURN_VALUE_IGNORED_BAD_PRACTICE"/>
