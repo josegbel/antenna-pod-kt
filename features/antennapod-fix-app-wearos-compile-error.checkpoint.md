@@ -6,7 +6,7 @@
 > **Blocks:** Milestone 15b (`tasks/antennapod-sync-settings-before-screenshot-milestone-15b.md`, PR #22) — its AC13 CI-gate needs all three of these fixes merged; this is the most severe of the three since it's a hard compile failure that stops `static-analysis` before SpotBugs ever runs.
 
 ## Status
-**IMPLEMENTED — ready for `migration-code-reviewer`.** Plan rev. 2 approved by red-team on Loop 2/2 (final). All 4 Steps executed on branch `fix/app-wearos-nullable-title-compile-error` (from `origin/develop` @ `d1e1bd127`): Step 1 reproduced the failure, Step 2 recorded the BEFORE characterization baseline and added the README invariant note (with red-team's Loop 2 MINOR wording correction for the `feeds*` pair applied), Step 3 applied the one-line `?: ""` fix and verified the full command set plus the AFTER characterization run, Step 4 ran the repo-wide `checkstyle lint` report-only and found it fully green (zero FAILED tasks, zero violations, 1970 tasks). Two commits made: README doc commit, then the production fix commit. Not yet PR'd — stopping for code review per instruction.
+**FULL LIFECYCLE COMPLETE THROUGH REVIEW — PR #26 OPEN.** Code review (Loop 1, zero findings) and implementation red-team (Loop 1, APPROVE) both closed clean. Committed on `fix/app-wearos-nullable-title-compile-error` (off `origin/develop` @ `d1e1bd127`), pushed, and PR opened against `develop`: https://github.com/josegbel/antenna-pod-kt/pull/26. PR description carries the hedged "removes the last known blocker" framing and notes the repo-wide `checkstyle lint` run is now fully green locally (1970 tasks, zero failures) for the first time across this whole investigation. Awaiting merge.
 
 ## Last updated
 2026-08-13
@@ -16,9 +16,9 @@
 - [x] Plan (legacy-android-planner) — 2026-08-12; **rev. 2 2026-08-12** (Loop 1 correction: Unknown 3, Step 2, Behavioral-equivalence ACs, File Scope reduction, Out of Scope, Open Question 4)
 - [x] Red-team plan (legacy-android-red-team) — Loop 1: CHALLENGE (2026-08-12), 1 MAJOR concern on Step 2's test justification → **accepted and fixed in rev. 2**. Loop 2 (final, 2026-08-12): **APPROVE**, 1 MINOR concern (README `feeds*` attribution) passed to developer to apply during Step 2, not requiring another loop
 - [x] Implement (android-migration-developer) — 2026-08-13. Branch `fix/app-wearos-nullable-title-compile-error`. Commits: `856f81f3b` (README invariant note, feeds* wording corrected per red-team Loop 2), `c9816ff54` (the one-line fix). Full Step 1-4 verification green; see task file's Implementation Notes for verbatim commands/results.
-- [ ] Code review (migration-code-reviewer)
-- [ ] Red-team implementation (legacy-android-red-team)
-- [ ] PR opened
+- [x] Code review (migration-code-reviewer) — 2026-08-13 — **APPROVE**, zero findings. Independently reproduced the pre-fix failure in a throwaway worktree, re-ran the full compile/lint/assemble/test command set, confirmed the README `feeds*` wording fix and the fully-green repo-wide `checkstyle lint` (1970 tasks, 0 failures).
+- [x] Red-team implementation (legacy-android-red-team) — 2026-08-13 — **APPROVE** (Loop 1 of max 2, no further loop needed). Traced the full data-provenance chain end-to-end (Activity → repository → listener service → `WearSerializer`) confirming no path can hand `EpisodeDetailActivity` a null title in production; reconfirmed the hedged PR framing is still accurate as of this check (CI still red on `develop`).
+- [x] PR opened — https://github.com/josegbel/antenna-pod-kt/pull/26 (base `develop`). Description carries the hedged framing and the green-local-run note.
 - [ ] PR merged
 - [ ] Milestone 15b's branch rebased/merged with `develop` and CI re-checked (alongside both sibling SpotBugs tasks)
 
@@ -51,6 +51,6 @@
 - **3 Open Questions for José, none blocking:** (1) add `:app-wearos`/`:net:sync:wear-interface` to AGENTS.md's module list as a separate trivial PR? (2) confirm the hedged PR framing; (3) if Step 4's `checkstyle lint` is green locally, how strongly to state that publicly.
 
 ## Resume command
-Implementation is complete on branch `fix/app-wearos-nullable-title-compile-error` (2 commits on top of `origin/develop`@`d1e1bd127`). Next step: invoke `migration-code-reviewer` against the Plan in `tasks/antennapod-fix-app-wearos-compile-error.md`, then `legacy-android-red-team` for the implementation loop, then open the PR (hedged wording per Unknown 5 — "removes the last known blocker," not "fixes CI"). Do not open the PR before code review per the operating instructions for this run.
+This task's own lifecycle is done through PR: Research → Plan (2 red-team loops) → Implement → Code review → Red-team implementation, all approved with zero unresolved findings. PR #26 is open against `develop`. This was the last of the three sibling CI-blocker tasks (`antennapod-fix-spotbugs-static-analysis-debt`, merged as PR #23; `antennapod-fix-net-download-service-spotbugs-debt`, merged as PR #25; this one, PR #26 open). Once #26 merges, `develop` should get its first fully green `Checks` run since 2026-07-24 — at which point Milestone 15b's branch (PR #22) can be rebased and its AC13 re-checked against real CI signal for the first time.
 
-Key things for the reviewer to check against the Plan: File Scope exactly 2 writable production/doc files touched (`EpisodeDetailActivity.kt` line 115 only, `net/sync/wear-interface/README.md` 4 lines added) plus the two spec files; `WearSerializerTest.java` byte-for-byte unchanged; the README's `feeds*` attribution correction (red-team Loop 2 MINOR) applied correctly; BEFORE/AFTER characterization results both recorded verbatim in the task file's Implementation Notes.
+Next concrete step for *this* task: merge PR #26 when ready. The 3 Open Questions for José (AGENTS.md module-list gap, PR framing confirmation, how strongly to state the green local run) are recorded above, none blocking.
