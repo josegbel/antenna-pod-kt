@@ -112,7 +112,7 @@ fun EpisodeDetailScreen(
 
             item {
                 Text(
-                    text = item.title,
+                    text = item.title ?: "",
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 4.dp)
