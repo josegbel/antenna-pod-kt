@@ -18,3 +18,7 @@ The actual communication is located in `:app` and `:app-wearos`, the `:net:sync:
 - `PAUSE`: watch sends to pause playback on the phone
 - `FEED_EPISODES_PREFIX + feedId`: watch requests episodes for a specific feed
 - `OPEN_ON_PHONE_PREFIX + itemId`: watch requests the phone to open an episode in the main app
+
+## Title normalization
+
+`WearSerializer` never emits or accepts a null title. `episodeToJson`/`episodeFromJson` — the private helpers shared by `episodesToBytes`/`episodesFromBytes` and `nowPlayingToBytes`/`nowPlayingFromBytes` — normalize a null `FeedItem.title` to `""` on both the outbound and inbound path. `feedsToBytes`/`feedsFromBytes` independently apply the same null-to-`""` normalization for `Feed.title`, via their own inline checks rather than the shared helpers. Callers on both sides of the wire can therefore treat a deserialized title as always non-null.
