@@ -1394,3 +1394,53 @@ The 38 pre-existing characterization tests (Milestone 15's) were run before and 
 3. **AC13 could not be satisfied in its literal form** — see the AC13 entry above. This is the one open item blocking a clean sign-off and needs a José decision (accept local-only verification for this PR, or authorize a separate follow-up to clear the pre-existing `:app`/`:net:download:service` SpotBugs debt and the `:app-wearos` compile error so `checks.yml`'s `needs: static-analysis` gate stops blocking unrelated PRs).
 
 No other deviations. Every other Step, File Scope boundary, and Acceptance Criterion was implemented and verified exactly as the twice-red-teamed Plan specified.
+
+## Code Review Verdict
+_By: migration-code-reviewer | 2026-08-07 | Loop 1 of max 3_
+
+### Verdict
+REQUEST CHANGES
+
+Everything within the developer's control checks out — independently re-verified from source and by re-running the actual build, not taken on the self-report. There is exactly one open item (AC13), and it is open through no fault of the diff, but it is a merge gate the twice-red-teamed Plan itself declared non-negotiable, so per this pipeline's own rule ("never approve with an open CRITICAL/MAJOR") it cannot be waved through silently. The requested "change" is not more code — it is getting the José decision the developer already correctly identified as needed, recording it, and re-invoking.
+
+### Verification performed independently this loop
+
+- Read `SyncSettingsCaptureHost.kt` and `SyncSettingsScreenshotCaptureTest.kt` in full from disk (not from the self-report).
+- Ran `git diff --name-status f5d4c5551 -- .` myself: exactly the 7 File Scope files (4 created, 3 modified), nothing else. Confirmed `ui/preferences/src/main/`, `ui/common/`, all build files untouched.
+- Ran `./gradlew :ui:preferences:testPlayDebugUnitTest --tests "*SyncSettingsScreenshotCaptureTest*" --rerun-tasks` myself: all 3 new tests PASS.
+- Ran `./gradlew :ui:preferences:testPlayDebugUnitTest --rerun-tasks` myself and summed the JUnit XML `tests=` attributes: **41**, matching the claimed 38+3.
+- Ran `./gradlew :ui:preferences:ktlintCheck --rerun-tasks` myself: BUILD SUCCESSFUL, `ktlintTestSourceSetCheck` genuinely executed (not cached/skipped).
+- Grepped both new Kotlin files for comments/TODO/FIXME: none present, confirming the Deviations entry is accurate.
+- Confirmed via `gh pr view 22` / `gh run view 31159097992` / `gh api .../annotations` that: the failed run's `Static Code Analysis` job failed specifically at the "Checkstyle, Lint, SpotBugs" step; `unit-test` and `emulator-test` both show `conclusion: skipped`; and the 7 SpotBugs annotations are exactly the 5 files named in Implementation Notes (`QueueFragment.java` ×2, `PreferenceActivity.java`, `OnlineFeedViewActivity.java`, `FeedInfoFragment.java`, `MainActivity.java` ×2) — none of which appear in `git diff --name-only f5d4c5551..HEAD`. The disclosure is accurate, not spun.
+- Confirmed `checks.yml:58` and `:109` both declare `needs: static-analysis` — the gate structure claim is correct.
+- Confirmed both empty "CI retrigger" commits (`c17903102`, `8203a70d7`) carry zero file changes via `git show --stat`.
+
+### Findings
+
+- **Severity:** MAJOR
+  **Class:** Acceptance Criteria
+  **File:line:** tasks/antennapod-sync-settings-before-screenshot-milestone-15b.md:1375 (AC13 entry)
+  **Finding:** AC13 — the real-CI merge gate the Plan calls out as non-negotiable ("A real CI run is a merge gate," "silently disabling, `@Ignore`-ing or CI-excluding the test fails this criterion regardless of what colour the pipeline ends up") — is not satisfied. The `unit-test` job that would actually exercise `SyncSettingsScreenshotCaptureTest` on `ubuntu-latest` never ran; it was skipped because the upstream `static-analysis` job failed on pre-existing SpotBugs debt in five `:app` files this branch never touches. I independently confirmed this is accurate (see above) — it is not a fabricated excuse and not something the developer caused. But the specific signal AC13 exists to obtain (do the environment-sensitive distinct-colour-floor and exact-dimension assertions actually hold on a different OS/JDK than every empirical probe behind this plan was run on) remains genuinely unverified, which is exactly the residual risk Red-Team Loop 1 flagged and AC13 was added to close.
+  **Suggested fix:** This is not fixable by more implementation work within File Scope — fixing the SpotBugs findings would itself violate File Scope and AGENTS.md ("never fix any warnings outside the code you wrote"), and routing around the gate (`@Ignore`, workflow edit) is explicitly forbidden by D3. The developer already framed the two legitimate paths correctly in Deviations #3. Get an explicit José decision recorded in Implementation Notes — either (a) accept local-only Robolectric verification as sufficient for this PR, with the disclosed gap standing, or (b) authorize a narrowly-scoped separate follow-up to clear the pre-existing `:app` SpotBugs debt so `unit-test` can actually run — then re-invoke this review with that decision on record. This is a one-line addition to Implementation Notes, not a code change, so it should not consume a full loop of rework.
+
+- **Severity:** MINOR
+  **Class:** Convention
+  **File:line:** ui/preferences/src/test/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SyncSettingsScreenshotCaptureTest.kt (whole file)
+  **Finding:** Plan Step 1 explicitly specified a one-line code comment on each of `testCapturedBitmapIsNotBlankAndHasExpectedDimensions` and `testFirstPreferenceRowIsNotClippedByActionBar`, each naming the other, so the AC2/AC3 non-substitutable pairing "survives being read one method at a time." Neither comment is present. The developer's stated reason (AGENTS.md's blanket "do not add comments" rule, and Milestone 15's precedent of two review loops over the same conflict) is sound, and I treat the repo's hard convention as correctly controlling over a Plan implementation detail — the actual assertions D2 requires are unaffected and are correctly implemented and verified independently above. Recording as MINOR rather than blocking: the pairing is still fully documented in the task file (Characterization test results, AC2, AC3), which a reviewer reads alongside the diff, but a future engineer skimming just the test file in isolation (e.g., in a GitHub diff view without the task file open) would not see the "these two are not substitutes" warning at the point of use.
+  **Suggested fix:** No action required this loop. If this recurs on future migration tasks with the same AGENTS.md-vs-Plan tension, worth raising with the planner once so future Plans stop specifying inline comments for this repo, rather than re-discovering the conflict per task.
+
+- **Severity:** MINOR
+  **Class:** Quality
+  **File:line:** features/antennapod-sync-settings-before-screenshot-milestone-15b.checkpoint.md (Resume command section)
+  **Finding:** The checkpoint's "Lifecycle progress" and "Status" sections are correctly updated (Implementation done, PR #22 open, code review pending). But the "Resume command" narrative at the bottom of the file is stale — it still says "twelve acceptance criteria" and "six files in File Scope" (pre-Revision-1 counts; Revision 1 made these thirteen and seven) and tells a future session "Next step: invoke `legacy-android-red-team` on the Plan," which is wrong — the Plan was red-teamed twice and approved, and the red-team-the-implementation step is still pending, not the plan. A session resuming from this checkpoint's bottom section alone, without reading the whole task file, would get stale/contradictory guidance.
+  **Suggested fix:** Update the "Resume command" paragraph to match current state: point to the Implementation Notes and this Code Review Verdict as the current position, correct the AC/file counts to 13/7, and state the actual next step (address the AC13 finding above, then re-invoke code review; after that, `legacy-android-red-team` reviews the implementation, not the plan).
+
+### Categories checked with no finding
+- **Scope:** All 7 modified/created files match File Scope exactly (verified via `git diff --name-status` against the merge-base, not the self-report). No file outside the Plan's Created/Modified lists appears. `ui/common/src/main/`, `ui/preferences/src/main/`, and all build files confirmed empty in the diff.
+- **Behavioral Equivalence:** Not applicable in the usual sense — this task adds no production behavior (correctly established in Research/Plan and unchallenged by either red-team loop). The three new tests are the actual verification surface; both AC2 (distinct-ARGB floor) and AC3 (toolbar-vs-first-row clipping check) are present, correctly implemented as a genuinely non-substitutable pair, and both assert on real rendered output rather than merely invoking code — confirmed by reading the test bodies directly, not the report.
+- **`SyncSettingsCaptureHost` fidelity (the plan's core D5 claim):** Confirmed by reading the file: extends `ToolbarActivity`, calls `setDisplayHomeAsUpEnabled(true)`, inflates `SettingsActivityBinding` — mirrors `PreferenceActivity` exactly as D5 specified. The test attaches the fragment to `R.id.settingsContainer`, not `android.R.id.content` — confirmed in the source, not assumed.
+- **`@Config` pin:** `@Config(sdk = [34], qualifiers = "w411dp-h891dp-xhdpi")` present at class level, no `-night` qualifier anywhere in the file.
+- **Comments:** Grepped both new Kotlin files directly — zero comments, zero TODO/FIXME, consistent with AGENTS.md and the Deviations disclosure.
+- **PNG + README provenance:** PNG confirmed 822×1782 via `file`. README contains all seven D6-required items, including the corrected (not the retracted) API-34 rationale and the chrome-fidelity statement.
+- **Test coverage / correctness:** 41 tests green (independently counted from JUnit XML), `ktlintCheck` genuinely green (re-run with `--rerun-tasks`, not cached), no resource-cleanup or threading concerns (Robolectric single-threaded JVM test, `tearDown()` clears the queue instance).
+- **The two "CI retrigger" commits:** Confirmed empty via `git show --stat` on both; no unintended changes leaked.
