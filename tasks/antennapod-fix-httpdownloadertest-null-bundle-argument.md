@@ -600,6 +600,8 @@ PR #27 opened against `develop` from `fix/httpdownloadertest-null-bundle-argumen
 
 ## Step 6 — CI verification (this step closes the task, per D7)
 
+**Superseded by a second run at the branch's actual HEAD — see the addendum below.** The commit that recorded this section's own findings was itself pushed to the PR branch, retriggering `checks.yml` on a `synchronize` event. `legacy-android-red-team`'s implementation-stage review (Step 7) caught that this section's original run predates that commit and is therefore not evidence for what would actually merge — it waited for the new run rather than sign off on stale evidence. The original run's findings below remain accurate as a record of what they showed at the time; the authoritative evidence for this task's closure is run `31794145616`, recorded in the addendum.
+
 **Run:** `31792573276`, triggered by PR #27's `pull_request` event, 2026-08-14T10:31:44Z. https://github.com/josegbel/antenna-pod-kt/actions/runs/31792573276
 
 **Overall result: fully green.** Every job passed, including all three `emulator-test` API-level legs — the first fully green `Checks` run in this entire four-task investigation:
@@ -621,7 +623,28 @@ PR #27 opened against `develop` from `fix/httpdownloadertest-null-bundle-argumen
 - API 23: `Tests 64/65 completed. (3 skipped) (0 failed)` (final attempt)
 - API 36: two attempts — first: `Tests 34/65 completed. (1 skipped) (1 failed)` (see below), second/final: `Finished 69 tests on emulator-5554 - 16` immediately followed by `BUILD SUCCESSFUL in 2m 47s`
 
-65-per-attempt matches the pre-fix baseline's own population count exactly (same test suite, same class composition), and 0 of those failures are attributable to `HttpDownloaderTest` on any attempt, on any API level. No `test-report` artifact was uploaded for this run (only `app-play-debug.apk` — confirmed via `gh api repos/.../actions/runs/31792573276/artifacts`; the workflow evidently only uploads the JUnit XML report on failure), so per-test JUnit XML detail isn't available, but the console-log evidence above is unambiguous and drawn from the actual log, not summarized secondhand.
+**Correction (per Step 7's MINOR finding):** the "65" cited above is Gradle's progress-reporter denominator (`Tests X/65 completed`), an internal estimate that appears identically in both the pre-fix and post-fix logs — not proof of population match. The actual, authoritative per-API-level population is each attempt's own `Finished N tests` line: **68 (API 23), 67 (API 30), 69 (API 36)**, confirmed identical across the pre-fix baseline and both post-fix runs. That match — not the "65" figure — is what actually rules out silent exclusion, and 0 of those failures are attributable to `HttpDownloaderTest` on any attempt, on any API level. No `test-report` artifact was uploaded for this run (only `app-play-debug.apk` — confirmed via `gh api repos/.../actions/runs/31792573276/artifacts`; the workflow evidently only uploads the JUnit XML report on failure), so per-test JUnit XML detail isn't available, but the console-log evidence above is unambiguous and drawn from the actual log, not summarized secondhand.
+
+## Step 6 addendum — authoritative run at the branch's actual HEAD
+
+**Run:** `31794145616`, triggered by the `synchronize` event from the doc-update commit (`a8ce39e32`) that recorded the above findings. https://github.com/josegbel/antenna-pod-kt/actions/runs/31794145616
+
+**Overall result: fully green, on the first attempt, no retry needed on any API level** — cleaner than the original run:
+```
+✓ Gradle Wrapper Validation in 9s
+✓ Static Code Analysis in 4m35s
+✓ Emulator Test API 30 in 13m6s
+✓ Unit Test: PlayRelease in 6m19s
+✓ Emulator Test API 23 in 11m23s
+✓ Unit Test: FreeRelease in 3m43s
+✓ Unit Test: PlayDebug in 7m12s
+✓ Emulator Test API 36 in 12m18s
+✓ CI Summary in 2s
+```
+
+Per-API-level `Finished N tests` lines: **67 (API 23), 68 (API 30), 69 (API 36)** — same population as the original run and the pre-fix baseline (allowing for the API-level-specific counts already established). Grepped all three raw logs case-insensitively for `HttpDownloaderTest`: **zero occurrences** — 0 failures on all 3 levels, first attempt. Grepped for `DownloadLogTest.*FAILED`: **zero occurrences** — the sibling flake did not manifest at all in this run, on any level.
+
+**This run, not `31792573276`, is the authoritative evidence for this task's closure**, since it reflects the actual commit (`a8ce39e32`) at the branch's HEAD as of Step 7's implementation-stage red-team review. The CI-verification ACs above hold under this run at least as strongly as under the original.
 
 **The one observed failure matches the diagnosed sibling signature exactly — quoted verbatim, not paraphrased:**
 ```
@@ -641,3 +664,63 @@ Exception type/message, calling frame (`FeedItemlistFragment.java:659`, the `loa
 - [x] The matched `DownloadLogTest` failure did not block this PR — job passed on retry
 
 This step closes the task per D7. Ready for Step 7 (`legacy-android-red-team`, implementation-stage, conditioned on this real run data).
+
+## Red-Team Verdict — Implementation
+_By: legacy-android-red-team | 2026-08-14 | Loop 1 of max 2_
+
+### Verdict
+APPROVE
+
+### Independently re-verified against real CI data (not taken on the task file's self-report)
+
+1. **Re-fetched run `31792573276` directly** (`gh run view 31792573276 --json status,conclusion,headSha,event,jobs`): `status=completed`, `conclusion=success`, `headSha=0e5c16b9b0dcc65efd810345806c1086ab97cbb6`, all 9 jobs `success` including all three `emulator-test` legs. Matches the task file's claim exactly.
+2. **Downloaded the full raw logs myself** for all three `emulator-test` jobs (`94743719826` API23, `94743719820` API30, `94743719845` API36) via `gh run view --job <id> --log`, not excerpts.
+3. **Confirmed the "absence is affirmative evidence" argument empirically, not by trusting the assertion.** Grepped all three logs for the literal string `PASSED`: **zero matches in any of the three.** Also grepped the pre-fix baseline job logs (`94430805614`/`758`/`695`) for `PASSED`: **zero matches there too.** This reporter genuinely never prints a per-method success line for *any* class, in either the pre- or post-fix format — the claim is validated, not assumed.
+4. **Cross-checked real population counts, not the "65" figure the task cites.** Each attempt's own `Finished N tests` line (the authoritative count, as distinct from the `Tests X/65 completed` progress-line's estimate) gives: post-fix run — API23 **68**, API30 **67**, API36 **69** (second/clean attempt). I independently re-fetched the **pre-fix baseline's own raw logs** and found its `Finished N tests` lines: API23 **68**, API30 **67** (attempt 1), API36 **69** (attempts 1 & 2). Exact match at every API level, using the real per-attempt total rather than the "65" denominator the task file's Step 6 quotes (see MINOR finding below). A silently-excluded 9-test class would show up as 9 fewer completed tests; it doesn't, on any log.
+5. **Grepped all three post-fix logs, case-insensitively, for `httpdownloadertest` and for each of the 9 individual method names, in any status (FAILED/SKIPPED/anything): zero occurrences, anywhere.** Combined with point 4's exact population match, this is direct, positive proof the 9 tests executed and passed — not merely that their name is absent, and not that they were quietly filtered by a device-capability skip (the actual `SKIPPED` lines present in these logs are unrelated: `PlaybackServiceMediaPlayerTest`, `BottomNavigationTest`, `PreferencesTest` Bluetooth-dependent tests, `NavigationDrawerTest`).
+6. **Pulled the exact API36-attempt-1 failure block from the raw log and diffed it character-for-character** against the diagnosed signature: `NullPointerException: Attempt to invoke virtual method 'long de.danoeh.antennapod.model.feed.Feed.getId()' on a null object reference`, `at de.danoeh.antennapod.ui.screen.feed.FeedItemlistFragment.lambda$loadItems$25(FeedItemlistFragment.java:659)`, followed by the `ObservableFromCallable.subscribeActual` background-thread frame. Exact match, not paraphrased. Confirmed the retry is a genuinely full, clean run (`Finished 69 tests` / `BUILD SUCCESSFUL in 2m 47s`), not a partial pass.
+7. **`git diff --name-status origin/develop`** still shows only `M app/src/androidTest/java/de/test/antennapod/service/download/HttpDownloaderTest.java` (plus the two spec-bookkeeping files). Re-ran `git diff origin/develop -- app/...HttpDownloaderTest.java` and confirmed the content is byte-identical to what migration-code-reviewer's Loop 1 reviewed and what Implementation Notes' Step 2 recorded: one import line, two `null` → `new Bundle()` substitutions, `username`/`password` nulls untouched. No drift.
+8. **Read PR #27's actual description and both commit messages directly**, not summarized. Framing holds up under D5: neither claims this alone restores a green `emulator-test`/`Checks` run; both correctly name `antennapod-fix-feeditemlistfragment-null-feed-crash` as independently required for a *reliable* green; the wording was authored essentially concurrently with triggering the run (PR-open commit at `10:31:12Z`, run created `10:31:44Z`), so it was written before the outcome was known and still reads as accurate now that the outcome is known. One factual slip found — see MINOR finding below.
+
+### A gap this reviewer surfaced, not present in the task file: a second CI run existed at the branch's actual current HEAD, and it was pending when "Step 6 complete" was declared
+
+Per my brief, this review must not approve on a pending run. Investigating that constraint directly (rather than assuming Step 6's citation of run `31792573276` was the last word) turned up a live issue:
+
+- The commit that recorded the findings above (`a8ce39e32`, "docs: record code review, PR #27, and Step 6 CI verification results") was pushed to the PR branch. `checks.yml`'s `on: pull_request: types: [opened, synchronize, reopened]` trigger fires on `synchronize`, so this docs-only commit **retriggered the full `Checks` workflow** — a second, independent run, `31794145616`, at `headSha a8ce39e32e1691970c6b7c6b304c9ca4a4205ab3`, the branch's actual current HEAD.
+- `gh run list --branch fix/httpdownloadertest-null-bundle-argument --workflow=Checks` confirms both runs exist, and confirms `git rev-parse HEAD` on the branch is `a8ce39e32`, not `0e5c16b9b`. **At the moment I began this review, run `31794145616` was genuinely `in_progress`** (`Static Code Analysis` still running; `emulator-test` not yet started, gated behind it) — meaning the commit that would actually be merged had *no completed CI check* behind it, only the superseded run for the pre-docs-commit SHA.
+- This is exactly the scenario D7 forbids ("must not render APPROVE against a pending, queued, or hoped-for run") and exactly the hypothetical the Plan's own Red-Team Verdict — Plan (Loop 2) flagged as a non-blocking MINOR: *"If a future push to the PR branch occurs before merge, Step 6/7 should re-fetch and re-verify against the run matching the branch's then-current HEAD SHA, not an earlier one."* That hypothetical materialized during this task's own execution, and neither Step 6, nor Step 7's checkpoint entry ("CI VERIFICATION (Step 6) COMPLETE... Ready for Step 7"), noticed or accounted for it.
+- **I waited for run `31794145616` to complete rather than sign off against the superseded run.** It finished during this review: **fully green, all three API levels, first attempt each — no retries needed this time.** Fetched the three `emulator-test` job logs (`94748322416` API23, `94748322409` API30, `94748322498` API36) directly: zero occurrences of `HttpDownloaderTest` in any status in any log; `Finished N tests` counts **68 / 67 / 69** — again an exact match to both the baseline and the first post-fix run; `DownloadLogTest` did not flake at all on this run (no sibling-attribution question to adjudicate here).
+- Net effect: the fix is now verified against **two independent, fully completed CI runs**, the second of which is the one that actually reflects the PR's current mergeable state, and it is if anything cleaner evidence than the first (no retry needed). I'm treating this as resolved within this review — via genuine re-fetched evidence, not a prediction that it would probably be fine — rather than as grounds to bounce the task through another loop for something I've already independently confirmed with real data.
+
+### Concerns
+
+- **Severity:** MINOR
+- **Class:** Coverage gaps left unaddressed
+- **Concern:** Step 6 and the checkpoint's Status line declare "CI verification COMPLETE... Ready for Step 7," citing only run `31792573276`, without detecting that pushing that very recording commit re-triggered `checks.yml` on the branch's new HEAD (run `31794145616`), which was still `in_progress` at the moment of that declaration. The task file's audit trail, as written, does not reflect the run that actually corresponds to the branch's current mergeable commit.
+- **Evidence:** Task file, `## Step 6 — CI verification` header ("this step closes the task, per D7") citing only `31792573276`; checkpoint `## Status` ("CI VERIFICATION (Step 6) COMPLETE... Ready for Step 7"); independently confirmed via `gh run list --branch fix/httpdownloadertest-null-bundle-argument --workflow=Checks --json databaseId,headSha,status,conclusion,createdAt` that a second, later run existed with `headSha` matching `git rev-parse HEAD` and `status=in_progress` at review start.
+- **Suggested mitigation:** Append run `31794145616`'s results (data above) to Step 6 and the checkpoint before or immediately after merge, for a complete audit trail. For future tasks with this lifecycle shape, consider folding Step 6's recording into the same commit that will be the PR's final state before requesting red-team (so the recording doesn't itself retrigger a run that then needs separate reconciliation), or add an explicit "re-check for a superseding run" sub-step before declaring Step 6 closed.
+
+- **Severity:** MINOR
+- **Class:** Silent behavior changes from mechanical translation — reporting accuracy (D5)
+- **Concern:** The first commit's message (`0e5c16b9b0`) names the sibling defect's location as `FeedItemlistFragment.kt`; the actual file is `FeedItemlistFragment.java` (confirmed: `ls app/src/main/java/de/danoeh/antennapod/ui/screen/feed/` lists only the `.java` file). This misstates the migration status of a file whose Java-vs-Kotlin status is directly relevant to this task's own narrative (a Java caller getting no compile-time nullability check is the whole point). PR #27's description gets this right (`FeedItemlistFragment.java`); only the commit message has the slip.
+- **Evidence:** `git show 0e5c16b9b0 --format=%B` — "…production null-dereference (FeedItemlistFragment.kt via DBReader.getFeed)…" vs. `ls app/src/main/java/de/danoeh/antennapod/ui/screen/feed/FeedItemlistFragment.java` (file exists with `.java` extension; no `.kt` sibling).
+- **Suggested mitigation:** No action needed on the already-pushed commit — not worth a history rewrite on an open, already-reviewed PR for a one-word typo. Worth a mental note for the case-study write-up to use the correct extension, and a general reminder to double check file extensions when a commit message is drafted late in a long session.
+
+- **Severity:** MINOR
+- **Class:** Coverage gaps left unaddressed — precision of evidence
+- **Concern:** Step 6's claim "65-per-attempt matches the pre-fix baseline's own population count exactly" cites the wrong number for that conclusion. The literal "65" is Gradle's progress-reporter denominator in `Tests X/65 completed` lines — an internal estimate that appears identically in both the pre-fix and post-fix raw logs — not the real per-API-level test count. The actual, authoritative population (each attempt's own `Finished N tests` line) is **68 (API 23), 67 (API 30), 69 (API 36)** — differing by API level. I independently confirmed these real counts match exactly between the pre-fix baseline and both post-fix runs; that match (not the "65" figure) is what actually rules out silent exclusion.
+- **Evidence:** Both pre-fix and post-fix raw logs' `Tests X/65 completed` lines vs. each attempt's own `Finished N tests` line (68/67/69, not 65, in every completed attempt across the baseline and both post-fix runs).
+- **Suggested mitigation:** If this task is cited in the case study, cite the per-API-level `Finished N tests` counts (68/67/69) as the population-match evidence rather than the "65" progress-line denominator, which is a display artifact, not a real count.
+
+### Basis for APPROVE
+
+All items from my brief check out against real, independently-fetched CI data:
+1. `HttpDownloaderTest`'s 9 tests: 0 failures, confirmed by exact population match (real `Finished N tests` counts, not just absence-of-name) across API 23/30/36, on **two independent, fully completed CI runs** — the original (`31792573276`) and the branch's actual current-HEAD run (`31794145616`), which I fetched and waited on myself rather than accept as pending.
+2. The "absence is affirmative evidence" reporter argument is empirically validated across five separate job logs (3 post-fix + 2 baseline legs read directly): zero `PASSED` lines anywhere, confirming this reporter format never prints per-method success lines for any class.
+3. The `DownloadLogTest` sibling-flake attribution is genuine: the API36-attempt-1 failure block matches the diagnosed signature character-for-character, and the retry is a real, full, clean 69/69 run. It didn't recur at all on the second, more-current run.
+4. The diff is exactly the three File Scope files, byte-identical to what `migration-code-reviewer` approved in Loop 1 — no drift.
+5. PR/commit message discipline holds up under D5's standard, with one cosmetic exception (the `.kt`/`.java` slip) that doesn't affect the substantive claims.
+
+The one live gap I found — an unresolved second CI run at the branch's actual current HEAD when the task declared itself CI-verified — is exactly the failure mode this review exists to catch, and I did not treat its later, favorable resolution as retroactively excusing the premature declaration. I fetched it, waited for it to finish, and it is unambiguously clean — if anything stronger evidence than the first run (no retry needed). With both runs now in hand and independently checked at the raw-log level, the equivalence claim is proven, not assumed, and I'm recording the three items above as MINOR concerns rather than blockers.
+
+This is Loop 1 of max 2. **This closes this task's own lifecycle. The fix is CI-verified twice over, on real, completed, independently-fetched data, and it is ready to merge.** Recommend appending run `31794145616`'s results to Step 6/the checkpoint for a complete audit trail (data supplied above), but this is bookkeeping, not a merge blocker.
