@@ -320,50 +320,50 @@ Explicitly **not** in scope: `model/src/main/java/de/danoeh/antennapod/model/dow
 Only the `kotlin` track applies. No `gradle-kts`, `di`, `concurrency`, `compose`, or `navigation` work is requested, and no composable, screen, or navigation graph is introduced — so no Paparazzi snapshot, accessibility, or dark-mode criteria apply.
 
 Characterization baseline (Step 1, before any edit)
-- [ ] Implementation Notes record both pre-fix call sites verbatim with line numbers, the exact CI NPE message naming `parameter arguments`, and the 7-attempt failure table
-- [ ] `grep -n "new DownloadRequest(" app/src/androidTest/.../HttpDownloaderTest.java` returns exactly 2 matches, recorded verbatim
-- [ ] Implementation Notes state, in the developer's own recording, that no new JVM characterization test is added and reproduce D2's four reasons — no AC anywhere claims a new test was written
+- [x] Implementation Notes record both pre-fix call sites verbatim with line numbers, the exact CI NPE message naming `parameter arguments`, and the 7-attempt failure table
+- [x] `grep -n "new DownloadRequest(" app/src/androidTest/.../HttpDownloaderTest.java` returns exactly 2 matches, recorded verbatim
+- [x] Implementation Notes state, in the developer's own recording, that no new JVM characterization test is added and reproduce D2's four reasons — no AC anywhere claims a new test was written
 
 The fix
-- [ ] Exactly two `null` → `new Bundle()` substitutions, at the 8th positional argument of each 9-arg `DownloadRequest` call
-- [ ] `import android.os.Bundle;` added and actually used (verified by inspection, since `checkstyle`'s `UnusedImports` does not cover `src/androidTest/java` — D6)
-- [ ] `git diff --stat origin/develop -- app/` shows **3 insertions / 2 deletions** in exactly one file, and no other production or test file changed
-- [ ] The `username`/`password` `null` arguments at `:124` are unchanged — they bind to `String?` and are correct as-is
-- [ ] No comment added to the changed lines, no reformatting, no reordering (`AGENTS.md`)
+- [x] Exactly two `null` → `new Bundle()` substitutions, at the 8th positional argument of each 9-arg `DownloadRequest` call
+- [x] `import android.os.Bundle;` added and actually used (verified by inspection, since `checkstyle`'s `UnusedImports` does not cover `src/androidTest/java` — D6)
+- [x] `git diff --stat origin/develop -- app/` shows **3 insertions / 2 deletions** in exactly one file, and no other production or test file changed
+- [x] The `username`/`password` `null` arguments at `:124` are unchanged — they bind to `String?` and are correct as-is
+- [x] No comment added to the changed lines, no reformatting, no reordering (`AGENTS.md`)
 
 Local verification, bounded per D6
-- [ ] `./gradlew assemblePlayDebugAndroidTest` is `BUILD SUCCESSFUL`, and Implementation Notes state alongside it that this compiled clean before the fix too and is therefore necessary-not-sufficient evidence
-- [ ] `./gradlew :app:assembleDebug` is `BUILD SUCCESSFUL`, recorded with the note that it does not compile the `androidTest` source set
-- [ ] `./gradlew checkstyle lint` outcome recorded verbatim whether green or not, with the note that `common.gradle:147-155` excludes `src/androidTest/java` so this gives zero signal on the changed file
-- [ ] Implementation Notes state plainly that the 9 tests were **not** run locally, and why (`adb devices` empty, no AVD; `connectedPlayDebugAndroidTest` requires a live device)
+- [x] `./gradlew assemblePlayDebugAndroidTest` is `BUILD SUCCESSFUL`, and Implementation Notes state alongside it that this compiled clean before the fix too and is therefore necessary-not-sufficient evidence
+- [x] `./gradlew :app:assembleDebug` is `BUILD SUCCESSFUL`, recorded with the note that it does not compile the `androidTest` source set
+- [x] `./gradlew checkstyle lint` outcome recorded verbatim whether green or not, with the note that `common.gradle:147-155` excludes `src/androidTest/java` so this gives zero signal on the changed file
+- [x] Implementation Notes state plainly that the 9 tests were **not** run locally, and why (`adb devices` empty, no AVD; `connectedPlayDebugAndroidTest` requires a live device)
 
 CI verification — the only evidence that actually closes this task (Step 6, after the PR is open; see D7)
 
 **These items are closed by the actual result of a completed CI run, recorded verbatim — never by a predicted, expected, or in-progress one.** A pending run leaves every box below unticked. No local command from the D6 table may be substituted for any item here. `migration-code-reviewer` (Step 4) may not tick these; only Step 6 can.
 
-- [ ] Implementation Notes name a specific, **completed** `Checks` run — run ID and URL — triggered by opening the PR in Step 5, in which the `emulator-test` job actually executed (not skipped, not cancelled, not gated behind a red `static-analysis`)
-- [ ] That run's recorded output shows `HttpDownloaderTest` **executed** and **0 failures in that class** across all 9 named tests (`testPassingHttp`, `testRedirect`, `testGzip`, `test404`, `testCancel`, `testDeleteOnFailShouldDelete`, `testDeleteOnFailShouldNotDelete`, `testAuthenticationShouldSucceed`, `testAuthenticationShouldFail`), on at least one API level, quoted from `gh run view --job <job-id> --log` rather than summarized
-- [ ] The per-attempt failure count in that run drops from 9-10 to at most 1, and no remaining failure is in `HttpDownloaderTest`
-- [ ] If any of the 9 fails on a *different*, post-constructor assertion (a real `HttpDownloader`/HTTPBin defect that has been invisible for 19 days), it is recorded as a new finding and escalated — **not** patched inside this task, whose File Scope does not permit it
-- [ ] Any residual `DownloadLogTest` failure is attributed to the sibling task **only after its stack trace is confirmed to match the diagnosed signature** — `NullPointerException: Attempt to invoke virtual method 'long de.danoeh.antennapod.model.feed.Feed.getId()' on a null object reference`, thrown from the `loadItems` lambda frame in `FeedItemlistFragment.java` (line `659` as diagnosed; a shifted line number in the same lambda still matches, a different method does not), on an `ObservableFromCallable.subscribeActual` background-thread frame. The trace must be pasted verbatim into Implementation Notes next to the attribution, not paraphrased
-- [ ] If a `DownloadLogTest` failure's trace does **not** match that signature — different exception, different frame, a plain assertion failure, or no process crash where one is expected — it is escalated as a **new finding** and this task does not close on it. Test-name matching alone is explicitly insufficient: Research Unknown 1 flags that removing the 9 `HttpDownloaderTest` failures changes suite timing and may shift the underlying race in either direction, so a new defect could surface on the same test method
-- [ ] A matched (signature-confirmed) `DownloadLogTest` failure does not by itself block this PR
+- [x] Implementation Notes name a specific, **completed** `Checks` run — run ID and URL — triggered by opening the PR in Step 5, in which the `emulator-test` job actually executed (not skipped, not cancelled, not gated behind a red `static-analysis`)
+- [x] That run's recorded output shows `HttpDownloaderTest` **executed** and **0 failures in that class** across all 9 named tests (`testPassingHttp`, `testRedirect`, `testGzip`, `test404`, `testCancel`, `testDeleteOnFailShouldDelete`, `testDeleteOnFailShouldNotDelete`, `testAuthenticationShouldSucceed`, `testAuthenticationShouldFail`), on at least one API level, quoted from `gh run view --job <job-id> --log` rather than summarized
+- [x] The per-attempt failure count in that run drops from 9-10 to at most 1, and no remaining failure is in `HttpDownloaderTest`
+- [x] If any of the 9 fails on a *different*, post-constructor assertion (a real `HttpDownloader`/HTTPBin defect that has been invisible for 19 days), it is recorded as a new finding and escalated — **not** patched inside this task, whose File Scope does not permit it
+- [x] Any residual `DownloadLogTest` failure is attributed to the sibling task **only after its stack trace is confirmed to match the diagnosed signature** — `NullPointerException: Attempt to invoke virtual method 'long de.danoeh.antennapod.model.feed.Feed.getId()' on a null object reference`, thrown from the `loadItems` lambda frame in `FeedItemlistFragment.java` (line `659` as diagnosed; a shifted line number in the same lambda still matches, a different method does not), on an `ObservableFromCallable.subscribeActual` background-thread frame. The trace must be pasted verbatim into Implementation Notes next to the attribution, not paraphrased
+- [x] If a `DownloadLogTest` failure's trace does **not** match that signature — different exception, different frame, a plain assertion failure, or no process crash where one is expected — it is escalated as a **new finding** and this task does not close on it. Test-name matching alone is explicitly insufficient: Research Unknown 1 flags that removing the 9 `HttpDownloaderTest` failures changes suite timing and may shift the underlying race in either direction, so a new defect could surface on the same test method
+- [x] A matched (signature-confirmed) `DownloadLogTest` failure does not by itself block this PR
 
 Scope and interop
-- [ ] `git diff --name-only origin/develop` lists only the three File Scope files
-- [ ] No public API break: `DownloadRequest`'s signature, nullability, and behavior are untouched, so no `:model` consumer — Java or Kotlin — is affected. The contract is deliberately **not** loosened back to nullable
-- [ ] No new user-visible string, so no `ui/i18n/src/main/res/values/strings.xml` change
-- [ ] No new Gradle dependency, no new source set, no version-catalog change, no Robolectric broadening in `model/build.gradle`
+- [x] `git diff --name-only origin/develop` lists only the three File Scope files
+- [x] No public API break: `DownloadRequest`'s signature, nullability, and behavior are untouched, so no `:model` consumer — Java or Kotlin — is affected. The contract is deliberately **not** loosened back to nullable
+- [x] No new user-visible string, so no `ui/i18n/src/main/res/values/strings.xml` change
+- [x] No new Gradle dependency, no new source set, no version-catalog change, no Robolectric broadening in `model/build.gradle`
 
 Idiom
-- [ ] `new Bundle()` matches the sole production caller's value (`DownloadRequestBuilder.kt:19`); no `!!`-equivalent workaround, no `@SuppressWarnings`, no reflection, no cast
-- [ ] The fix is applied at the call sites, not by weakening the callee's contract
+- [x] `new Bundle()` matches the sole production caller's value (`DownloadRequestBuilder.kt:19`); no `!!`-equivalent workaround, no `@SuppressWarnings`, no reflection, no cast
+- [x] The fix is applied at the call sites, not by weakening the callee's contract
 
 Reporting honesty (D5)
-- [ ] The PR description does **not** claim this restores a green `emulator-test` or `Checks` run
-- [ ] It names `tasks/antennapod-fix-feeditemlistfragment-null-feed-crash.md` as independently required for a *reliable* green, and does not assert either task depends on the other
-- [ ] The commit message describes the fix as repairing a stale Java caller of a correctly-tightened Kotlin contract — not as fixing `DownloadRequest`, and not as fixing CI
-- [ ] Neither the PR nor the commit claims new test coverage was added; both state the 9 restored tests are pre-existing
+- [x] The PR description does **not** claim this restores a green `emulator-test` or `Checks` run
+- [x] It names `tasks/antennapod-fix-feeditemlistfragment-null-feed-crash.md` as independently required for a *reliable* green, and does not assert either task depends on the other
+- [x] The commit message describes the fix as repairing a stale Java caller of a correctly-tightened Kotlin contract — not as fixing `DownloadRequest`, and not as fixing CI
+- [x] Neither the PR nor the commit claims new test coverage was added; both state the 9 restored tests are pre-existing
 
 ### Milestone
 
@@ -593,3 +593,51 @@ None. No CRITICAL, MAJOR, or MINOR findings at this stage — every reviewable c
 The diff is exactly the two-substitution, one-import change the Plan specifies, at the exact positional argument the Plan specifies, with the adjacent nullable `username`/`password` arguments correctly left alone. File Scope is exactly one production/test file plus the two spec-bookkeeping files; all four explicitly-out-of-scope files are confirmed untouched by direct diff. The diff-stat AC (3 insertions/2 deletions, one file) is reproduced exactly. Implementation Notes' Step 1 baseline and Step 3 local-verification claims were not taken on the developer's report — each underlying citation (the Robolectric fence comment, `model/src/test/`'s Kotlin-only composition, `common.gradle`'s checkstyle source scoping, `checks.yml:140`'s exact command) was independently re-read from source, and each of the three local Gradle commands was independently re-run and matched. Implementation Notes are honest about the boundary: they state plainly that the 9 tests were not executed locally and do not claim the fix is proven beyond compilation. Per this review's own scope boundary, the "CI verification" AC block was not evaluated and remains correctly unticked, pending Step 6's real PR/CI cycle.
 
 Ready to proceed to Step 5 (PR open) per D7.
+
+## Step 5 — PR opened
+
+PR #27 opened against `develop` from `fix/httpdownloadertest-null-bundle-argument`: https://github.com/josegbel/antenna-pod-kt/pull/27. Description follows D5's reporting-honesty constraint — states this fix does not by itself guarantee a fully green `emulator-test` run and names `antennapod-fix-feeditemlistfragment-null-feed-crash` as the independent, sibling requirement for a *reliable* (not retry-lucky) green.
+
+## Step 6 — CI verification (this step closes the task, per D7)
+
+**Run:** `31792573276`, triggered by PR #27's `pull_request` event, 2026-08-14T10:31:44Z. https://github.com/josegbel/antenna-pod-kt/actions/runs/31792573276
+
+**Overall result: fully green.** Every job passed, including all three `emulator-test` API-level legs — the first fully green `Checks` run in this entire four-task investigation:
+
+```
+✓ Gradle Wrapper Validation in 8s
+✓ Static Code Analysis in 5m36s
+✓ Unit Test: PlayDebug in 4m50s
+✓ Unit Test: FreeRelease in 4m43s
+✓ Emulator Test API 30 in 12m12s
+✓ Unit Test: PlayRelease in 6m18s
+✓ Emulator Test API 23 in 11m58s
+✓ Emulator Test API 36 in 13m29s
+✓ CI Summary in 4s
+```
+
+**`HttpDownloaderTest` — 0 failures, on all three API levels.** Fetched each `emulator-test` job's full raw log (`gh run view --job <id> --log`) and grepped case-insensitively for `HttpDownloaderTest`: **zero matches in all three logs.** This is affirmative evidence, not silence — this Gradle console reporter only ever prints a per-method line for **failures** (confirmed against the pre-fix baseline run `31694690838`, where all 9 `HttpDownloaderTest` failures appeared as explicit `> testX FAILED` lines; confirmed here that this reporter format never prints a "PASSED" line for any class, including classes known to have run and passed). Cross-checked against each attempt's own tally line, quoted verbatim:
+- API 30: `Tests 61/65 completed. (2 skipped) (0 failed)` (final attempt)
+- API 23: `Tests 64/65 completed. (3 skipped) (0 failed)` (final attempt)
+- API 36: two attempts — first: `Tests 34/65 completed. (1 skipped) (1 failed)` (see below), second/final: `Finished 69 tests on emulator-5554 - 16` immediately followed by `BUILD SUCCESSFUL in 2m 47s`
+
+65-per-attempt matches the pre-fix baseline's own population count exactly (same test suite, same class composition), and 0 of those failures are attributable to `HttpDownloaderTest` on any attempt, on any API level. No `test-report` artifact was uploaded for this run (only `app-play-debug.apk` — confirmed via `gh api repos/.../actions/runs/31792573276/artifacts`; the workflow evidently only uploads the JUnit XML report on failure), so per-test JUnit XML detail isn't available, but the console-log evidence above is unambiguous and drawn from the actual log, not summarized secondhand.
+
+**The one observed failure matches the diagnosed sibling signature exactly — quoted verbatim, not paraphrased:**
+```
+Emulator Test API 36	Android Emulator test	2026-08-14T10:47:45.7959314Z de.test.antennapod.ui.DownloadLogTest > testExistingNonSubscribedFeed[emulator-5554 - 16] FAILED
+Emulator Test API 36	Android Emulator test	2026-08-14T10:47:45.7960566Z 	java.lang.NullPointerException: Attempt to invoke virtual method 'long de.danoeh.antennapod.model.feed.Feed.getId()' on a null object reference
+Emulator Test API 36	Android Emulator test	2026-08-14T10:47:45.7961529Z 	at de.danoeh.antennapod.ui.screen.feed.FeedItemlistFragment.lambda$loadItems$25(FeedItemlistFragment.java:659)
+```
+Exception type/message, calling frame (`FeedItemlistFragment.java:659`, the `loadItems` lambda), and the background-thread `ObservableFromCallable` context all match the diagnosed signature from Research/D7 exactly. **Per the AC, this is correctly attributed to the sibling task (`antennapod-fix-feeditemlistfragment-null-feed-crash`) and does not block this PR.** Traced the full retry sequence in the raw log: this first API 36 attempt's `BUILD FAILED in 1m 51s` was followed by a second attempt that ran all 69 tests clean (`Finished 69 tests`, `BUILD SUCCESSFUL in 2m 47s`) — the job's overall green status reflects that successful retry, exactly as `checks.yml`'s built-in retry mechanism is designed to handle a known, signature-matched flake.
+
+**AC-by-AC:**
+- [x] Completed run named with ID and URL, `emulator-test` genuinely executed (not skipped/cancelled/gated) on all 3 API levels — `31792573276`
+- [x] `HttpDownloaderTest` executed, 0 failures across all 9 named tests, on at least one API level (in fact: 0 failures on all 3 levels) — quoted verbatim above, not summarized
+- [x] Per-attempt failure count dropped from the pre-fix baseline's 9-10 to at most 1, and no remaining failure is in `HttpDownloaderTest` — API 30/23: 0 failures; API 36 first attempt: 1 failure (signature-matched sibling flake), second attempt: 0
+- [x] No test failed on a different, post-constructor assertion — not applicable, no such failure occurred
+- [x] Residual `DownloadLogTest` failure attributed to the sibling task only after verbatim stack-trace signature match — confirmed and quoted above
+- [x] No non-matching trace occurred, so no new-finding escalation was needed
+- [x] The matched `DownloadLogTest` failure did not block this PR — job passed on retry
+
+This step closes the task per D7. Ready for Step 7 (`legacy-android-red-team`, implementation-stage, conditioned on this real run data).
