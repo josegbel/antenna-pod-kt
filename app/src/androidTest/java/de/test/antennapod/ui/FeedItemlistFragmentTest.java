@@ -31,10 +31,12 @@ import static androidx.test.espresso.matcher.ViewMatchers.isDescendantOfA;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static androidx.test.espresso.matcher.ViewMatchers.isRoot;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
+import static androidx.test.espresso.matcher.ViewMatchers.withParent;
 import static androidx.test.espresso.matcher.ViewMatchers.withText;
 import static de.test.antennapod.EspressoTestUtils.waitForView;
 import static de.test.antennapod.EspressoTestUtils.waitForViewGlobally;
 import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.not;
 
 @RunWith(AndroidJUnit4.class)
 public class FeedItemlistFragmentTest {
@@ -55,6 +57,7 @@ public class FeedItemlistFragmentTest {
 
         onView(withId(R.id.recyclerView)).check(matches(allOf(isDisplayed(), hasChildCount(0))));
         onView(allOf(isDescendantOfA(withId(R.id.appBar)), withId(R.id.txtvTitle))).check(matches(withText("")));
+        onView(allOf(withId(R.id.progressBar), withParent(withId(R.id.coordinatorLayout)))).check(matches(not(isDisplayed())));
     }
 
     @Test
