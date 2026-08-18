@@ -653,9 +653,12 @@ public class FeedItemlistFragment extends Fragment implements AdapterView.OnItem
         if (disposable != null) {
             disposable.dispose();
         }
-        disposable = Observable.fromCallable(
+        disposable = Maybe.fromCallable(
                 () -> {
                     feed = DBReader.getFeed(feedID, true, 0, page * EPISODES_PER_PAGE);
+                    if (feed == null) {
+                        return null;
+                    }
                     int count = DBReader.getFeedEpisodeCount(feed.getId(), feed.getItemFilter());
                     return new Pair<>(feed, count);
                 })
@@ -663,6 +666,11 @@ public class FeedItemlistFragment extends Fragment implements AdapterView.OnItem
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(
                     result -> {
+                        if (feed == null) {
+                            adapter.setDummyViews(0);
+                            adapter.updateItems(Collections.emptyList());
+                            return;
+                        }
                         hasMoreItems = !(page == 1 && feed.getItems().size() < EPISODES_PER_PAGE);
                         swipeActions.setFilter(feed.getItemFilter());
                         refreshHeaderView();
@@ -680,6 +688,12 @@ public class FeedItemlistFragment extends Fragment implements AdapterView.OnItem
                         adapter.updateItems(Collections.emptyList());
                         updateToolbar();
                         Log.e(TAG, Log.getStackTraceString(error));
+                    }, () -> {
+                        feed = null;
+                        refreshHeaderView();
+                        adapter.setDummyViews(0);
+                        adapter.updateItems(Collections.emptyList());
+                        updateToolbar();
                     });
     }
 
