@@ -27,6 +27,7 @@ import java.util.Date;
 
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
+import static androidx.test.espresso.matcher.ViewMatchers.isDescendantOfA;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static androidx.test.espresso.matcher.ViewMatchers.isRoot;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
@@ -53,7 +54,7 @@ public class FeedItemlistFragmentTest {
         Thread.sleep(1000);
 
         onView(withId(R.id.recyclerView)).check(matches(allOf(isDisplayed(), hasChildCount(0))));
-        onView(withId(R.id.txtvTitle)).check(matches(withText("")));
+        onView(allOf(isDescendantOfA(withId(R.id.appBar)), withId(R.id.txtvTitle))).check(matches(withText("")));
     }
 
     @Test
@@ -73,7 +74,7 @@ public class FeedItemlistFragmentTest {
         intent.putExtra(MainActivityStarter.EXTRA_FEED_ID, feed.getId());
         activityRule.launchActivity(intent);
 
-        waitForViewGlobally(withText(feed.getTitle()), 2000);
+        waitForViewGlobally(allOf(isDescendantOfA(withId(R.id.appBar)), withText(feed.getTitle()), isDisplayed()), 2000);
         onView(withId(R.id.recyclerView)).check(matches(allOf(isDisplayed(), hasChildCountAtLeast(1))));
     }
 
