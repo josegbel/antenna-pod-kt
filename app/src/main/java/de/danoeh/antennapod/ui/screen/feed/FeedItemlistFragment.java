@@ -671,12 +671,13 @@ public class FeedItemlistFragment extends Fragment implements AdapterView.OnItem
                             adapter.updateItems(Collections.emptyList());
                             return;
                         }
-                        hasMoreItems = !(page == 1 && feed.getItems().size() < EPISODES_PER_PAGE);
-                        swipeActions.setFilter(feed.getItemFilter());
+                        Feed localFeed = feed;
+                        hasMoreItems = !(page == 1 && localFeed.getItems().size() < EPISODES_PER_PAGE);
+                        swipeActions.setFilter(localFeed.getItemFilter());
                         refreshHeaderView();
                         viewBinding.progressBar.setVisibility(View.GONE);
                         adapter.setDummyViews(0);
-                        adapter.updateItems(feed.getItems());
+                        adapter.updateItems(localFeed.getItems());
                         adapter.setTotalNumberOfItems(result.second);
                         updateToolbar();
                         viewBinding.recyclerView.restoreScrollPosition(scrollPosition);
