@@ -1454,3 +1454,84 @@ Everything within the developer's control checks out — independently re-verifi
 - **PNG + README provenance:** PNG confirmed 822×1782 via `file`. README contains all seven D6-required items, including the corrected (not the retracted) API-34 rationale and the chrome-fidelity statement.
 - **Test coverage / correctness:** 41 tests green (independently counted from JUnit XML), `ktlintCheck` genuinely green (re-run with `--rerun-tasks`, not cached), no resource-cleanup or threading concerns (Robolectric single-threaded JVM test, `tearDown()` clears the queue instance).
 - **The two "CI retrigger" commits:** Confirmed empty via `git show --stat` on both; no unintended changes leaked.
+
+## Code Review Verdict
+_By: migration-code-reviewer | 2026-08-20 | Loop 2 of max 3_
+
+### Verdict
+APPROVE
+
+Loop 1's sole blocking finding (AC13, MAJOR) is resolved with real evidence, independently re-verified from GitHub's own API/logs rather than taken on the report. The `static-analysis` gate that structurally prevented `unit-test`/`emulator-test` from ever running is gone — cleared by the five sibling PRs, confirmed merged into this branch cleanly. On the resulting CI run, `SyncSettingsScreenshotCaptureTest`'s three methods genuinely executed and passed on `ubuntu-latest`, and I confirmed from the raw job log (not the summary) that the passes are real and the dimension assertions are exact-match, not range-based. The one disclosed gap — the exact distinct-colour number isn't retrievable because the test never prints it — is a textual/documentation shortfall in AC13's original wording, not a substantive one: the `>=200` threshold is a real content assertion (not a no-op), and it PASSED for real on Linux CI, which is the fact AC13 exists to establish. No CRITICAL or MAJOR finding is open. Two MINOR items are recorded below, both non-blocking.
+
+### Verification performed independently this loop
+
+- `gh pr checks 22` and `gh run view 32348999145`: confirmed the run exists, is attached to this PR, and is `success`, with jobs `Static Code Analysis`, `Unit Test: PlayDebug`, `Unit Test: PlayRelease`, `Unit Test: FreeRelease`, and all three `Emulator Test API {23,30,36}` all green (not skipped).
+- `gh run view 32348999145 --log --job=96364870100` (Unit Test: PlayDebug) and grepped for `SyncSettingsScreenshotCaptureTest`: the raw log shows all three methods (`testFirstPreferenceRowIsNotClippedByActionBar`, `testWritesPngUnderModuleBuildDirectory`, `testCapturedBitmapIsNotBlankAndHasExpectedDimensions`) with literal `PASSED` lines — not inferred from a green checkmark.
+- Read `ui/preferences/src/test/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SyncSettingsScreenshotCaptureTest.kt` in full from disk. Confirmed: `assertEquals(822, bitmap.width)` / `assertEquals(1782, bitmap.height)` — exact-match, not a range or tolerance check. Confirmed the distinct-colour check is `assertTrue(distinctColors.size >= 200)` with no `println`/log statement anywhere in the file — the disclosed gap (exact count unretrievable) is accurate, not an excuse dressed up.
+- Confirmed via `git diff --stat origin/develop HEAD` (fetched fresh): exactly the 7 File Scope files, 1708 insertions, 0 deletions, 0 files outside File Scope — the merge with `origin/develop` brought in the sibling fixes at the `develop` level and did not touch this task's own diff. (A diff against the stale `f5d4c5551` base, by contrast, shows ~38 files — that is the sibling PRs' own content now living on `develop`, not scope creep by this task; the `origin/develop`-relative diff is the correct check and it is clean.)
+- Confirmed via `git diff --stat 412068b6d^1 5e237b889 -- ui/preferences/src/test/... tasks/artifacts/ ui/preferences/README.md` that the merge commit plus the one docs-only follow-up commit touched only the task/checkpoint files — none of this task's source File Scope files changed after Loop 1's review.
+- Ran `./gradlew --console=plain :ui:preferences:testPlayDebugUnitTest --tests "*SyncSettingsScreenshotCaptureTest*" --rerun-tasks` myself at current `HEAD` (`5e237b889`): all 3 PASSED, `BUILD SUCCESSFUL`, confirming the code under review is unchanged and still green locally as well as on the CI run cited.
+- Additional finding not asked for but surfaced during verification: `gh pr checks 22` at the time of this review shows a **newer** run (`32351500729`, triggered by the docs-only `5e237b889` commit) with `Unit Test: PlayDebug/PlayRelease/FreeRelease` all **failing** — but at the `Build` step, before `Test` even runs, on `:app-wearos:produceFreeReleaseComposeMapping FAILED` (confirmed via `gh run view 32351500729 --log --job=96372722267`). This module is untouched by this task's diff. `develop`'s own contemporaneous CI runs (`32348904404`, `32348685901`, both `success`, both close in time) rule out a `develop`-wide regression, and a docs-only commit cannot cause a Kotlin/Gradle build task to fail — this is consistent with transient CI flakiness in `:app-wearos`, not a regression introduced by this task or its merge. It does not undermine the AC13 evidence (the code tested in the green run `32348999145` is byte-identical to current `HEAD` outside the two doc files), but it does mean the PR's current GitHub status badge reads red. Recorded as a MINOR, non-blocking item below since a merger reading the badge alone could be misled.
+
+### Findings
+
+- **Severity:** MINOR
+  **Class:** Tests
+  **File:line:** tasks/antennapod-sync-settings-before-screenshot-milestone-15b.md:1394 (AC13 "RESOLVED" block, second bullet)
+  **Finding:** AC13's original text asks for "the distinct-colour count... the runner observed" to be pasted into Implementation Notes. `SyncSettingsScreenshotCaptureTest.kt`'s `testCapturedBitmapIsNotBlankAndHasExpectedDimensions` asserts `distinctColors.size >= 200` with no `println`/log statement, so that literal number is not retrievable from this or any future CI run without a test change. Confirmed accurate — not a fabricated excuse. Substantively this does not weaken the evidence: the `>=200` check is a real content assertion (not a bare non-null check) and it passed for real on `ubuntu-latest`, which is the fact AC13 exists to establish; the exact figure would only add colour-margin context, not change the pass/fail signal already obtained.
+  **Suggested fix:** Optional, low-priority follow-up: add `println("Distinct colours: ${distinctColors.size}")` to the test (a one-line, comment-free change consistent with AGENTS.md) and let a future CI run capture the actual number for the record. Not required to close this review — treating the passed `>=200` threshold as sufficient evidence of "renders on Linux CI, not near-blank" is a reasonable call within this reviewer's authority, and no further José waiver is needed since the original blocking condition (the `static-analysis` gate) is what actually got resolved, not routed around.
+
+- **Severity:** MINOR
+  **Class:** Quality
+  **File:line:** features/antennapod-sync-settings-before-screenshot-milestone-15b.checkpoint.md:35-38 (Resume command section)
+  **Finding:** Carried over from Loop 1's second MINOR finding, unaddressed. The "Resume command" section still reads "twelve acceptance criteria," "six files in File Scope" (pre-Revision-1 counts; actual is thirteen/seven) and "Next step: invoke `legacy-android-red-team` on the Plan" — stale; the Plan was red-teamed twice and approved, and the pending red-team step is against the implementation, not the plan. The "Status" and "Lifecycle progress" sections above it are accurate and current, so a reader of the whole file is not misled, but the bottom "Resume command" paragraph alone would mislead a future session that jumps straight there.
+  **Suggested fix:** Same as Loop 1: update the "Resume command" paragraph to point at the current position (Implementation Notes + this Loop 2 verdict), correct the counts to 13 ACs / 7 files, and state the real next step (Loop 2 is APPROVE; proceed to `legacy-android-red-team` against the implementation, not the plan). Small enough to fold into the same commit that records this verdict.
+
+### Categories checked with no finding
+- **Scope (re-verified post-merge):** `git diff --stat origin/develop HEAD` is exactly the 7 File Scope files with 0 deletions and 0 unexpected paths. The merge did not leak any sibling-task production file into this diff.
+- **Behavioral Equivalence:** Unchanged from Loop 1's assessment (no production behavior in scope; the two new test methods are the actual verification surface and both assert on real rendered output). Now additionally confirmed to hold on a second, independent environment (Linux CI, JDK per `ubuntu-latest`'s runner image) in addition to the original macOS runs — directly closing Research's Characterization gap 3 (cross-machine determinism was previously unverified).
+- **AC13 mechanics:** `needs: static-analysis` chain in `.github/workflows/checks.yml:58,109` no longer blocks `unit-test`/`emulator-test` on this PR — confirmed both jobs actually executed (not `skipped`) on run `32348999145`.
+- **No workaround taken:** Confirmed the fix was a real merge of upstream debt-clearing PRs, not an `@Ignore`, workflow edit, or other route-around that D3/AC13 forbid.
+- **Local reproducibility:** Re-ran the three new tests locally at current `HEAD`; still green, matching both the CI evidence and Loop 1's own local run.
+
+## Red-Team Verdict — Implementation
+_By: legacy-android-red-team | 2026-08-20 | Loop 1 of max 2_
+
+### Verdict
+APPROVE
+
+### Concerns
+
+- **Severity:** MINOR
+  **Class:** Coverage gap left unaddressed (disclosed, not hidden)
+  **Concern:** `testCapturedBitmapIsNotBlankAndHasExpectedDimensions` asserts `distinctColors.size >= 200` with no `println`/log statement, so the exact observed count is not retrievable from CI output — code review already flagged this twice (Loop 1 MINOR) and judged it non-blocking, correctly: a passing `>=200` threshold is a real, non-trivial content assertion (not a disguised non-null check), and it is far from a coin-flip result. I independently reproduced the missing number rather than take it on faith: local run + an out-of-band PIL colour count on the freshly-rendered PNG both give **364**, byte-identical to the checked-in artifact, and I confirmed via `gh run view` on the PR's current green run (`32351500729`, job `96383094957`) that the same three test methods pass on Linux CI as of this review, not just on the earlier-cited run. The gap is real but fully closed by evidence outside the test's own output; no further action is required to trust this criterion.
+  **Evidence:** `ui/preferences/src/test/.../SyncSettingsScreenshotCaptureTest.kt:99` (`assertTrue(distinctColors.size >= 200)`, no `println`); local run this session (`distinct colors: 364`, PIL cross-check); `shasum` match between `ui/preferences/build/reports/screenshots/sync_settings_before_milestone_15b.png` and `tasks/artifacts/sync-settings-before-milestone-15b.png`; `gh run view 32351500729 --log --job=96383094957` showing all three `SyncSettingsScreenshotCaptureTest` methods PASSED.
+  **Suggested mitigation:** Optional, low-priority: add a one-line `println("Distinct colours: ${distinctColors.size}")` in a future touch of this file so the number is captured in CI logs going forward. Not a merge blocker.
+
+- **Severity:** MINOR
+  **Class:** Process hygiene (not a behavioral-equivalence risk)
+  **Concern:** The checkpoint file's "Resume command" section was stale as of both Code Review loops (referring to pre-Revision-1 AC/file counts and telling a future session to red-team the Plan rather than the implementation). Since I am the terminal step in this task's lifecycle and am updating the checkpoint below anyway, I've corrected it directly rather than raise it as an open item — noted here only so the fix is visible in this record.
+  **Evidence:** `features/antennapod-sync-settings-before-screenshot-milestone-15b.checkpoint.md`, "Resume command" section (now corrected below).
+  **Suggested mitigation:** None needed — fixed in this pass.
+
+### Verification performed this loop
+
+Independent re-derivation from source and live systems, not the prior stages' reports:
+
+1. **Content-id collision and chrome fidelity (task item 1).** Read `ui/common/src/main/java/de/danoeh/antennapod/ui/common/ToolbarActivity.java`, `ui/common/src/main/res/layout/toolbar_activity.xml`, `ui/preferences/src/main/res/layout/settings_activity.xml`, and `app/src/main/java/de/danoeh/antennapod/ui/screen/preferences/PreferenceActivity.java` directly. Confirmed: `toolbar_activity.xml`'s inner `FrameLayout` genuinely reuses `@android:id/content` (the collision is real, not overstated); `SyncSettingsCaptureHost.kt` mirrors `PreferenceActivity.onCreate` layer for layer (`super.onCreate` → `setDisplayHomeAsUpEnabled(true)` → `setContentView(SettingsActivityBinding.inflate(layoutInflater).root)`); the capture test attaches to `R.id.settingsContainer`, the same non-colliding id production uses via `binding.settingsContainer.getId()`. The capture host inflates the *actual* `settings_activity.xml` via the same generated `SettingsActivityBinding` class production imports — not a parallel copy.
+2. **Assertion quality (task item 2).** Read `SyncSettingsScreenshotCaptureTest.kt` in full. Ran it locally (`--rerun-tasks`): all 3 PASS. Independently counted distinct colours on the rendered PNG via PIL (a tool outside the test's own code path): 364, matching Implementation Notes' claim exactly. Confirmed `testFirstPreferenceRowIsNotClippedByActionBar` uses a mechanism (real `MaterialToolbar` window-bottom vs. `RecyclerView` first-child window-top) structurally independent of the colour floor, so the floor's known blind spot (352-colour clipped render) remains covered.
+3. **PNG/README match (task item 3).** `file` + `git hash-object` on the checked-in PNG: 822×1782, hash `3e74162d3...`, matching Implementation Notes. `shasum` of a freshly-rendered PNG on this machine matches the checked-in file byte-for-byte. `tasks/artifacts/README.md` contains all seven D6-required items, including the corrected (not retracted) API-34 rationale and the chrome-fidelity statement.
+4. **File Scope discipline (task item 4).** `git fetch origin` then `git diff --stat origin/develop HEAD` (against the current fetched tip, correcting for the fact that `f5d4c5551` is now a stale ancestor after this branch's merge with `origin/develop`): exactly 7 files — the File Scope's 4 Created + 3 Modified, 1708 insertions, 0 deletions, nothing under `src/main` or `ui/common`.
+5. **Live CI state.** `gh pr checks 22`: all jobs pass on the current run. Pulled the raw log for `Unit Test: PlayDebug` on that run and confirmed the three `SyncSettingsScreenshotCaptureTest` methods PASSED — independent of and consistent with the earlier CI run cited in Implementation Notes.
+
+### Categories checked with no finding
+- **Silent behavior changes from mechanical translation:** N/A — no production code in this diff (confirmed by the empty `src/main`/`ui/common` diff).
+- **Public API breakage:** None — no symbol outside `src/test/` changes.
+- **Characterization tests prove equivalence, not just existence:** The three new tests assert on real geometry and real pixel content (dimensions, distinct-colour floor, toolbar-relative clipping check), not mere invocation. `SyncSettingsTestHost.kt` and its six sibling test files are confirmed untouched.
+- **Milestone/scope creep:** Diff stays exactly within File Scope; no MVVM/architecture work introduced; two disclosed, narrow departures from `PreferenceActivity` (no EventBus registration, no `MainPreferencesFragment` navigation) are documented in the README and don't affect rendered chrome.
+- **`compose`/`navigation`/`concurrency`/`di`/`gradle-kts` track checklists:** Not applicable — no track runs in this task.
+- **HSHD:** Logged-out state only; no credential field in the captured view hierarchy or PNG.
+- **Deviation — omitted inline code comments (D2):** Confirmed both new Kotlin files carry zero comments. AGENTS.md's blanket "do not add comments" rule genuinely conflicts with the Plan's explicit ask here, and the developer's resolution (favor the repo's hard convention, document the AC2/AC3 pairing in the task file instead) is the correct call — concur with Code Review's assessment, not a new finding.
+
+### Recommendation
+Ready for a human merge decision on PR #22. Every claim worth independently re-deriving was re-derived from source, a live local test run, an out-of-band pixel count, and a live CI query — not taken from any prior stage's report — and all of it checks out. The two MINOR items above are both disclosed, non-blocking, and (in the second case) already fixed in this pass.
