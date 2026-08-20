@@ -42,6 +42,8 @@ dependencies {
     implementation libs.google.material
     implementation libs.androidx.preference
     implementation libs.androidx.work.runtime
+    implementation libs.kotlinx.coroutines.core
+    implementation libs.kotlinx.coroutines.android
 
     implementation libs.rxandroid
     implementation libs.rxjava

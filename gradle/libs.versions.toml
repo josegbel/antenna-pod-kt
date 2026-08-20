@@ -11,6 +11,7 @@ espresso = "3.5.0"
 androidx-test = "1.5.0"
 hilt = "2.58"
 ksp = "2.3.11"
+coroutines = "1.9.0"
 
 [libraries]
 androidx-annotation = { module = "androidx.annotation:annotation", version = "1.9.1" }
@@ -58,7 +59,9 @@ google-play-services-cast-framework = { module = "com.google.android.gms:play-se
 hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
 hilt-compiler = { module = "com.google.dagger:hilt-android-compiler", version.ref = "hilt" }
 kotlin-bom = { module = "org.jetbrains.kotlin:kotlin-bom", version = "1.9.24" }
-kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version = "1.9.0" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "coroutines" }
 commons-lang3 = { module = "org.apache.commons:commons-lang3", version = "3.18.0" }
 commons-io = { module = "commons-io:commons-io", version = "2.5" }
 jsoup = { module = "org.jsoup:jsoup", version = "1.15.1" }
