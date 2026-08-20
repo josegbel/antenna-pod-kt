@@ -685,6 +685,7 @@ public class FeedItemlistFragment extends Fragment implements AdapterView.OnItem
                     }, error -> {
                         feed = null;
                         refreshHeaderView();
+                        viewBinding.progressBar.setVisibility(View.GONE);
                         adapter.setDummyViews(0);
                         adapter.updateItems(Collections.emptyList());
                         updateToolbar();
@@ -692,6 +693,7 @@ public class FeedItemlistFragment extends Fragment implements AdapterView.OnItem
                     }, () -> {
                         feed = null;
                         refreshHeaderView();
+                        viewBinding.progressBar.setVisibility(View.GONE);
                         adapter.setDummyViews(0);
                         adapter.updateItems(Collections.emptyList());
                         updateToolbar();
