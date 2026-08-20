@@ -9,7 +9,7 @@ glide = "4.16.0"
 okhttp = "4.12.0"
 espresso = "3.5.0"
 androidx-test = "1.5.0"
-hilt = "2.60.1"
+hilt = "2.58"
 ksp = "2.3.11"
 
 [libraries]
