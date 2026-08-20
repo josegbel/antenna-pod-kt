@@ -653,9 +653,12 @@ public class FeedItemlistFragment extends Fragment implements AdapterView.OnItem
         if (disposable != null) {
             disposable.dispose();
         }
-        disposable = Observable.fromCallable(
+        disposable = Maybe.fromCallable(
                 () -> {
                     feed = DBReader.getFeed(feedID, true, 0, page * EPISODES_PER_PAGE);
+                    if (feed == null) {
+                        return null;
+                    }
                     int count = DBReader.getFeedEpisodeCount(feed.getId(), feed.getItemFilter());
                     return new Pair<>(feed, count);
                 })
@@ -663,12 +666,18 @@ public class FeedItemlistFragment extends Fragment implements AdapterView.OnItem
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(
                     result -> {
-                        hasMoreItems = !(page == 1 && feed.getItems().size() < EPISODES_PER_PAGE);
-                        swipeActions.setFilter(feed.getItemFilter());
+                        if (feed == null) {
+                            adapter.setDummyViews(0);
+                            adapter.updateItems(Collections.emptyList());
+                            return;
+                        }
+                        Feed localFeed = feed;
+                        hasMoreItems = !(page == 1 && localFeed.getItems().size() < EPISODES_PER_PAGE);
+                        swipeActions.setFilter(localFeed.getItemFilter());
                         refreshHeaderView();
                         viewBinding.progressBar.setVisibility(View.GONE);
                         adapter.setDummyViews(0);
-                        adapter.updateItems(feed.getItems());
+                        adapter.updateItems(localFeed.getItems());
                         adapter.setTotalNumberOfItems(result.second);
                         updateToolbar();
                         viewBinding.recyclerView.restoreScrollPosition(scrollPosition);
@@ -676,10 +685,18 @@ public class FeedItemlistFragment extends Fragment implements AdapterView.OnItem
                     }, error -> {
                         feed = null;
                         refreshHeaderView();
+                        viewBinding.progressBar.setVisibility(View.GONE);
                         adapter.setDummyViews(0);
                         adapter.updateItems(Collections.emptyList());
                         updateToolbar();
                         Log.e(TAG, Log.getStackTraceString(error));
+                    }, () -> {
+                        feed = null;
+                        refreshHeaderView();
+                        viewBinding.progressBar.setVisibility(View.GONE);
+                        adapter.setDummyViews(0);
+                        adapter.updateItems(Collections.emptyList());
+                        updateToolbar();
                     });
     }
 

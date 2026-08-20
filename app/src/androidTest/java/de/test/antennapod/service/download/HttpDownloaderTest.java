@@ -1,6 +1,7 @@
 package de.test.antennapod.service.download;
 
 import android.content.Context;
+import android.os.Bundle;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.filters.LargeTest;
 import android.util.Log;
@@ -85,7 +86,7 @@ public class HttpDownloaderTest {
                                 String username, String password) {
         Feed feedFile = setupFeedFile(url, title, deleteExisting);
         DownloadRequest request = new DownloadRequest(feedFile.getLocalFileUrl(), url, title, 0, Feed.FEEDFILETYPE_FEED,
-                username, password, null, false);
+                username, password, new Bundle(), false);
         Downloader downloader = new HttpDownloader(request);
         downloader.call();
         DownloadResult status = downloader.getResult();
@@ -121,7 +122,7 @@ public class HttpDownloaderTest {
         final String url = httpServer.getBaseUrl() + "/delay/3";
         Feed feedFile = setupFeedFile(url, "delay", true);
         final Downloader downloader = new HttpDownloader(new DownloadRequest(feedFile.getLocalFileUrl(),
-                url, "delay", 0, Feed.FEEDFILETYPE_FEED, null, null, null, false));
+                url, "delay", 0, Feed.FEEDFILETYPE_FEED, null, null, new Bundle(), false));
         Thread t = new Thread() {
             @Override
             public void run() {
