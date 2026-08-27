@@ -1308,3 +1308,36 @@ Independently re-verified rather than re-reading the narrative:
 ### What does not need to happen next
 
 Nothing here requires touching the shipped code or re-running the build. Both concerns are corrections to the task file's own evidentiary record (D13's diff table and D6/AC25's applicability text), not to `gradle/libs.versions.toml`, `build.gradle`, `app/build.gradle`, `ui/preferences/build.gradle`, or `PodcastApp.java` — none of which this review found any fault with. Address Concern 1 (correct the stdlib row and its cause) and Concern 2 (add the D6 applicability-scope addendum), then re-invoke for Loop 2.
+
+## Red-Team Verdict — Implementation (Loop 2, Final)
+_By: legacy-android-red-team | 2026-08-27 | Loop 2 of max 2_
+
+### Verdict
+APPROVE
+
+### Method
+
+Did not take the developer's `40c8ef378` commit message on trust. Re-verified both Loop 1 findings independently, from scratch, against the actual repo and live sources:
+
+- `git show --stat 40c8ef378` and `git diff 37ca31a4a 40c8ef378 --stat -- gradle/libs.versions.toml build.gradle app/build.gradle ui/preferences/build.gradle app/src/main/java/de/danoeh/antennapod/PodcastApp.java` — confirmed empty: the commit touches only `tasks/antennapod-sync-settings-toolchain-milestone-16.md`, nothing else. Pure docs commit, exactly as claimed.
+- Re-ran `./gradlew :app:dependencyInsight --dependency org.jetbrains.kotlin:kotlin-stdlib` against `playDebugRuntimeClasspath`, `playDebugCompileClasspath`, and `playReleaseRuntimeClasspath` on the current tree (post-`40c8ef378`, same code as Loop 1 since nothing shipped changed) — all three still resolve `kotlin-stdlib:2.3.20`, matching the corrected row exactly and matching my own Loop 1 numbers.
+- Read `git diff 37ca31a4a 40c8ef378` in full rather than sampling — both the D13 table correction and the D6 addendum, in place, not just their existence.
+- Independently checked the new `material-icons-core` row from first principles, not on the developer's word: `./gradlew :app:dependencyInsight --dependency androidx.compose.material:material-icons-core` against `playDebugRuntimeClasspath` on the current tree → "No dependencies matching given input were found," confirming absence. Fetched `material3-android-1.4.0.pom` and `material3-android-1.3.1.pom` directly from `dl.google.com`: `1.3.1`'s POM declares `material-icons-core-android:1.6.0` as a dependency; `1.4.0`'s POM has no `material-icons` dependency at all. Confirms the removal is real, correctly attributed to the material3 1.3.1→1.4.0 transition, and not a silent swap for a same-named successor.
+
+### Findings
+
+**Concern 1 (kotlin-stdlib) — RESOLVED, verified not just re-read.** The D13 table row now reads "unchanged, 2.3.20 → 2.3.20," with the correct cause (D3/D8's prediction was measured against the originally-planned Hilt 2.60.1, never re-derived after the step-down to the shipped 2.58, whose own POM floor of 2.2.20 sits below what's already resolved). This matches, to the version number, what re-running `dependencyInsight` against the real tree shows. The correction is placed inline in the D13 table (not just asserted in prose elsewhere), so a future reader hits the corrected number at the point where the stale one used to be, not a disclaimer bolted on separately.
+
+**Concern 2 (D6 ladder scope) — RESOLVED, correctly placed and correctly scoped.** The addendum sits exactly where Loop 1 asked for it — immediately after D6's stop-condition paragraph, before "Recorded so nobody re-derives it" — and says what it needed to say: the four rungs were exhaustive of the JVM-sharing conflict only; the ladder was never reached, not exhausted, because the buildscript-classpath failure preempts Step 11; AC25 is invoked by extension rather than by its literal precondition; the practical outcome is unaffected; and the buildscript-classpath failure class is named as a second, independent standing risk for any future Paparazzi ≥2.0.0-alpha attempt on this AGP line, not specific to alpha05. A future reader who stops at D6 — without reading into Implementation Notes — now gets the accurate picture directly.
+
+**New since Loop 1 — the `material-icons-core` removal row.** Independently verified accurate (see Method): real removal, correctly caused by material3 1.4.0 no longer declaring it, no successor artifact, nothing in the module references the removed package. This is exactly the kind of self-critical, measured-not-assumed addition the D13 diff is supposed to produce, found during the developer's own end-to-end re-verification pass rather than by a second red-team catch. No concern.
+
+**Everything else from Loop 1** — the aapt2/sdk-common root-cause confirmation, the `resolutionStrategy`-out-of-scope judgment, the Compose ripple into `:app`'s runtime classpath, `app-wearos` staying unmoved, AC25's disposition-table accuracy, AC20's genuine independence from the Paparazzi outcome — was not re-litigated this loop since nothing in `40c8ef378` touches those claims and Loop 1 already independently verified each from primary sources rather than the narrative. Re-confirmed via the stat diff above that no code file changed, so none of those verifications could have been invalidated by this commit.
+
+### Scope discipline
+
+`git diff 37ca31a4a 40c8ef378 --name-only` returns exactly one file: `tasks/antennapod-sync-settings-toolchain-milestone-16.md`. No production source, no build file, no test file touched. The fix stayed inside its own lane — a docs-only correction to the evidentiary record, as both Loop 1 concerns required and nothing more.
+
+### Verdict rationale
+
+No CRITICAL or MAJOR concerns remain. Both Loop 1 findings are resolved with evidence that holds up under independent re-derivation, not just re-reading the developer's account — the specific failure mode this review exists to catch (an equivalence or evidence claim that isn't actually backed by what it claims) was checked again from scratch and did not recur. **APPROVE.** This closes the max-2-loop implementation red-team for Milestone 16; no further loop is available or needed.
