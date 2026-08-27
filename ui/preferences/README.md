@@ -62,3 +62,14 @@ Conventions a future edit to this slice must preserve:
    equivalent content check) instead. Such a test's PNG output is written under this module's `build/`
    directory on every run and is never asserted byte-for-byte against a checked-in image — cross-machine
    rendering determinism (font rasterisation, in particular) is not guaranteed.
+10. **Compose is enabled on this module, and its versions come from the catalog BOM.** Do not add a
+    per-artifact Compose version anywhere in this module's `build.gradle` — every Compose dependency here
+    is either the platform (`implementation platform(libs.androidx.compose.bom)`) or a versionless entry
+    resolved against it. Bumping Compose means bumping the `compose-bom` catalog entry, never pinning an
+    individual artifact.
+11. **`androidx.compose.ui:ui-tooling` is `debugImplementation`, not `implementation`.** It carries the
+    Compose preview/inspector runtime, which has no reason to ship in a release build; declaring it
+    `implementation` would put it on both R8-minified release variants' classpaths for no benefit.
+12. **Coroutines dependencies (`kotlinx-coroutines-core`, `-android`) come from the shared `coroutines`
+    version ref**, not an inline version — the same ref `kotlinx-coroutines-play-services` uses elsewhere in
+    the catalog. Keep any future coroutines bump to the ref, so all consumers move together.
