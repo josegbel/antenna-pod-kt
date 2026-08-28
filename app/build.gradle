@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.triplet.play) apply false
+    alias(libs.plugins.hilt)
 }
 apply from: "../common.gradle"
 apply from: "../playFlavor.gradle"
@@ -89,6 +90,8 @@ dependencies {
     implementation project(':ui:transcript')
 
     annotationProcessor libs.androidx.annotation
+    annotationProcessor libs.hilt.compiler
+    implementation libs.hilt.android
     implementation libs.androidx.appcompat
     implementation libs.androidx.coordinatorlayout
     implementation libs.androidx.core

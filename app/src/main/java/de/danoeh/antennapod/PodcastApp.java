@@ -8,7 +8,10 @@ import com.google.android.material.color.DynamicColors;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.EventBusException;
 
+import dagger.hilt.android.HiltAndroidApp;
+
 /** Main application class. */
+@HiltAndroidApp
 public class PodcastApp extends Application {
     private static final String TAG = "PodcastApp";
 
