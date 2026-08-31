@@ -25,9 +25,6 @@ import de.danoeh.antennapod.storage.preferences.SynchronizationCredentials
 import de.danoeh.antennapod.storage.preferences.SynchronizationSettings
 import de.danoeh.antennapod.ui.common.Keyboard
 import de.danoeh.antennapod.ui.preferences.R
-import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
-import io.reactivex.rxjava3.core.Observable
-import io.reactivex.rxjava3.schedulers.Schedulers
 import java.util.Locale
 import java.util.regex.Pattern
 import kotlinx.coroutines.CancellationException
@@ -182,23 +179,25 @@ open class GpodderAuthenticationFragment : DialogFragment() {
         txtvError.visibility = View.GONE
         deviceName.isEnabled = false
 
-        Observable.fromCallable {
-            val deviceId = generateDeviceId(deviceNameStr)
-            service!!.configureDevice(deviceId, deviceNameStr, GpodnetDevice.DeviceType.MOBILE)
-            GpodnetDevice(deviceId, deviceNameStr, GpodnetDevice.DeviceType.MOBILE.toString(), 0)
-        }
-            .subscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread())
-            .subscribe({ device ->
+        lifecycleScope.launch {
+            try {
+                val device = withContext(ioDispatcher) {
+                    val deviceId = generateDeviceId(deviceNameStr)
+                    service!!.configureDevice(deviceId, deviceNameStr, GpodnetDevice.DeviceType.MOBILE)
+                    GpodnetDevice(deviceId, deviceNameStr, GpodnetDevice.DeviceType.MOBILE.toString(), 0)
+                }
                 progBarCreateDevice.visibility = View.GONE
                 selectedDevice = device
                 advance()
-            }, { error ->
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
                 deviceName.isEnabled = true
                 progBarCreateDevice.visibility = View.GONE
                 txtvError.text = error.message
                 txtvError.visibility = View.VISIBLE
-            })
+            }
+        }
     }
 
     private fun generateDeviceName(): String {

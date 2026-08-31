@@ -15,10 +15,6 @@ import de.danoeh.antennapod.storage.preferences.SynchronizationCredentials
 import de.danoeh.antennapod.storage.preferences.SynchronizationSettings
 import de.danoeh.antennapod.storage.preferences.UserPreferences
 import de.danoeh.antennapod.ui.preferences.R
-import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins
-import io.reactivex.rxjava3.exceptions.CompositeException
-import io.reactivex.rxjava3.plugins.RxJavaPlugins
-import io.reactivex.rxjava3.schedulers.Schedulers
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import org.junit.After
@@ -53,26 +49,13 @@ class GpodderAuthenticationFragmentAsyncCharacterizationTest {
 
         capturedCulprit = null
         previousUncaughtHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { _, error -> capturedCulprit = unwrapCulprit(error) }
-        RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
-        RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
-        RxJavaPlugins.setErrorHandler { error -> capturedCulprit = unwrapCulprit(error) }
+        Thread.setDefaultUncaughtExceptionHandler { _, error -> capturedCulprit = error }
     }
 
     @After
     fun tearDown() {
         SynchronizationQueue.instance = null
-        RxJavaPlugins.reset()
-        RxAndroidPlugins.reset()
         Thread.setDefaultUncaughtExceptionHandler(previousUncaughtHandler)
-    }
-
-    private fun unwrapCulprit(error: Throwable): Throwable {
-        return if (error is CompositeException) {
-            error.exceptions.firstOrNull { it is NullPointerException } ?: error
-        } else {
-            error
-        }
     }
 
     private fun field(name: String) =
@@ -101,7 +84,7 @@ class GpodderAuthenticationFragmentAsyncCharacterizationTest {
             dialog.findViewById<Button>(R.id.butLogin).performClick()
             shadowOf(Looper.getMainLooper()).idle()
         } catch (error: Throwable) {
-            capturedCulprit = unwrapCulprit(error)
+            capturedCulprit = error
         }
     }
 
