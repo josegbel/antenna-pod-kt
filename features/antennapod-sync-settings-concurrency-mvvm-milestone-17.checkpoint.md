@@ -5,7 +5,7 @@
 > **Depends on:** Milestone 16 (`di`+`compose`+`concurrency` prerequisites, PR #31, **merged into `develop` at `8e4c292174897b75d7b9e1609c595717953a004e`, 2026-08-28**). Milestone 15 (`kotlin`, PR #21, `f5d4c5551`) and Milestone 15b (before-screenshot, PR #22, `45904a410`) are both merged and ancestors of that commit. Branch is cut fresh from `origin/develop`.
 
 ## Status
-**READY FOR PR — implementation + code review + red-team implementation review + post-review cleanup all complete (2026-08-31). 9 commits on `concurrency/sync-settings-milestone-17` off `origin/develop` `8e4c29217`. Next: José opens the PR (auto-chain ends at PR, not merge).** Post-review cleanup pass (commit 9) addressed all five review findings that warranted a code touch: (1) removed dead `SyncSubtitle.Cleared` + its `render()` branch; (2) moved the kotlinx `stacktrace.recovery=false` disable out of two test `@Before`s into a module-level `ui/preferences/build.gradle` `tasks.withType(Test) { systemProperty … }` — deterministic for every test class, and the deviation note in Implementation Notes is corrected; (3) confirmed by test run that `SyncServiceEventSubscriber` must be `internal` (a `private` nested class fails every ViewModel test with `IllegalAccessException` from EventBus reflection) — recorded; (4) added a conscious AC9 helper-scope acknowledgement to Implementation Notes; (5) ran the device check — `:app:installPlayDebug` on an API-36 emulator, navigated to Sync Settings: ActionBar renders "Synchronization", no subtitle (disconnected → `Absent` → null), survives an onStop/onStart cycle, **0 FATAL/AndroidRuntime log lines**. Re-verified: both flavoured test tasks 55/55/0/0/0, ktlint + checkstyle + lint + `:app:assembleDebug` green, `libs.versions.toml` still +1 line. Two deviations now recorded in Implementation Notes (dead-code removal; the module-level test property), both non-behavioral, no planner re-approval required. **PR NOT opened — José does that.**
+**PR OPENED — [PR #32](https://github.com/josegbel/antenna-pod-kt/pull/32) (2026-08-31), `concurrency/sync-settings-milestone-17` → `develop`, 9 commits off `origin/develop` `8e4c29217`. Auto-chain complete; the pipeline ends here — merge is José's call, and OQ1 (ship Gap 16 as a preserved, now-pinned wrong-password crash for one more milestone, or fix it now) is the open decision for him before/at merge.** Post-review cleanup pass (commit 9) addressed all five review findings that warranted a code touch: (1) removed dead `SyncSubtitle.Cleared` + its `render()` branch; (2) moved the kotlinx `stacktrace.recovery=false` disable out of two test `@Before`s into a module-level `ui/preferences/build.gradle` `tasks.withType(Test) { systemProperty … }` — deterministic for every test class, and the deviation note in Implementation Notes is corrected; (3) confirmed by test run that `SyncServiceEventSubscriber` must be `internal` (a `private` nested class fails every ViewModel test with `IllegalAccessException` from EventBus reflection) — recorded; (4) added a conscious AC9 helper-scope acknowledgement to Implementation Notes; (5) ran the device check — `:app:installPlayDebug` on an API-36 emulator, navigated to Sync Settings: ActionBar renders "Synchronization", no subtitle (disconnected → `Absent` → null), survives an onStop/onStart cycle, **0 FATAL/AndroidRuntime log lines**. Re-verified: both flavoured test tasks 55/55/0/0/0, ktlint + checkstyle + lint + `:app:assembleDebug` green, `libs.versions.toml` still +1 line. Two deviations now recorded in Implementation Notes (dead-code removal; the module-level test property), both non-behavioral, no planner re-approval required. **PR NOT opened — José does that.**
 
 Previously: **red-team implementation review Loop 1 = APPROVE (2026-08-31).** 8 commits on `concurrency/sync-settings-milestone-17` off `origin/develop` `8e4c29217`. Red-team independently re-verified: suite 55/55 both flavours twice from `--rerun-tasks` (0/0/0), 8 pre-existing classes row-for-row unchanged; the six async `@Test` bodies not present in the `5392ca143..HEAD` diff at all; cancellation paired-file artifact genuine (`ManualDispatcher` holds the coroutine, `dismiss()` cancels `lifecycleScope`, io block never runs, `credentialsError == GONE` guards the `CancellationException` rethrow); `devices` race genuinely preserved (write in `withContext(ioDispatcher)`, no `@Volatile`, count 3); Gap 16 wrong-password NPE still crashes (`testWrongPasswordErrorPathThrowsFromNullCause` green, bare-NPE channel disclosed); `callbackFlow`/`stateIn(WhileSubscribed(0,0))` registration tied to collection, AC22 both tests green; conflation + buffer-drop the only per-post divergences, envelope honest; scope clean (9 code/build + 4 doc, `net/`/`event/`/`bugreport/` untouched, no Hilt/KSP/Compose); `!!` 22/12/7/0=41; `:app:assembleDebug` + ktlint green here. **Verdict block `## Red-Team Verdict — Implementation` appended to the task file after the Code Review verdict.** Five findings, all MINOR/NIT, none blocking: (1) ActionBar render timing shifts synchronous→collector-driven — 1-frame on-device window uncovered by tests, device check recommended before PR is "done"; (2) `stacktrace.recovery=false` deviation relies on an unstated test-class-ordering invariant and the deviation note misstates which classes set it — recommend a module-level `test { systemProperty … }`; (3) Site B `CancellationException` rethrow verified by inspection only; (4) `SyncSubtitle.Cleared` dead code (= code review Finding 2); (5) `SyncServiceEventSubscriber` `internal` vs plan's `private` (= code review Finding 4). Findings 2 and 4 worth a code touch in PR polish. PR NOT opened.
 
@@ -31,7 +31,7 @@ Previously: 2026-08-31 (`legacy-android-red-team`, **plan review Loop 2: APPROVE
 - [x] Implement (android-migration-developer) — **complete 2026-08-31**, 8 commits, suite 41 → 55
 - [x] Code review (migration-code-reviewer) — max 3 loops — **Loop 1: APPROVE (2026-08-31)**, 4 MINOR/NIT findings, none blocking
 - [x] Red-team implementation (legacy-android-red-team) — max 2 loops — **Loop 1: APPROVE (2026-08-31)**, 5 MINOR/NIT findings, none blocking
-- [ ] PR opened
+- [x] PR opened — **[PR #32](https://github.com/josegbel/antenna-pod-kt/pull/32) (2026-08-31)**
 
 ## Decisions for next session
 - **Auto-chain authorized 2026-08-28** for this milestone — do not pause between pipeline stages; end at PR opened, merge stays with José.
@@ -78,11 +78,26 @@ Four pre-research assumptions were falsified or materially sharpened. Full detai
 
 ## Resume command
 
-**Next stage: José opens the PR.** Branch `concurrency/sync-settings-milestone-17`, **9 commits** off
-`origin/develop` `8e4c29217` (commit 9 = the post-review cleanup pass). Auto-chain ends at PR, not merge.
-PR description = the Plan section; follow `.github/pull_request_template.md` (description above the
-checklist, 2–8 sentences, `Closes: #<issue>` if one exists, note that it is AI-generated). Do **not**
-create commits on `develop`.
+**PIPELINE COMPLETE — [PR #32](https://github.com/josegbel/antenna-pod-kt/pull/32) opened 2026-08-31**
+(`concurrency/sync-settings-milestone-17` → `develop`, 9 commits off `origin/develop` `8e4c29217`). The
+full spec workflow — Research → Plan (+ Revision 1) → red-team plan (Loop 1 CHALLENGE, Loop 2 APPROVE) →
+Implement (8 commits) → code review (APPROVE) → red-team implementation (APPROVE) → post-review cleanup
+(commit 9) → PR — ran end to end under the 2026-08-28 auto-chain authorization, which is scoped to
+opening the PR and **not** to merging.
+
+**Open for José, before/at merge:**
+- **OQ1 (non-blocking, one decision):** ship Gap 16 as a preserved-and-now-pinned wrong-password crash
+  for one more milestone (plan recommendation; fix verified end-to-end in Milestone 18 behind the DI
+  seam), or fix it now as its own commit after Step 8. The exact change set for "fix now" is enumerated
+  in the task file's Plan → OQ1. Relevant because the sequence may be offered upstream (OQ3) and "found a
+  reachable crash on the most common failure path, shipped it unfixed" reads differently in a public
+  case study — a public-claims call the root `CLAUDE.md` reserves for José.
+- **OQ2 / OQ3:** unchanged, non-blocking (catalog ref rename; upstreaming intent).
+
+**Next milestone: 18 (`di` wiring)** — inherits, by name and with the fix, from this milestone's Step 10
+future-work update: Gap 16's one-liner + its end-to-end test, the `kotlinx-coroutines-test` catalog
+bill, and the five deferred `SynchronizationQueue.instance!!` sites. Scaffold with `spec-task` before
+invoking `legacy-android-researcher`.
 
 The post-review cleanup pass (commit 9, `## Implementation Notes` → "Cleanup pass (post-review)") closed
 the code-touch findings: (1) AC9 helper-scope — documented; (2) `stacktrace.recovery=false` moved to a
