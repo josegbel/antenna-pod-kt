@@ -13,6 +13,8 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.text.HtmlCompat
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
@@ -23,11 +25,16 @@ import de.danoeh.antennapod.storage.preferences.SynchronizationCredentials
 import de.danoeh.antennapod.storage.preferences.SynchronizationSettings
 import de.danoeh.antennapod.ui.preferences.R
 import de.danoeh.antennapod.ui.preferences.screen.AnimatedPreferenceFragment
-import org.greenrobot.eventbus.EventBus
-import org.greenrobot.eventbus.Subscribe
-import org.greenrobot.eventbus.ThreadMode
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
+
+    private val viewModel: SynchronizationPreferencesViewModel by lazy {
+        ViewModelProvider(this)[SynchronizationPreferencesViewModel::class.java]
+    }
+
+    private var syncStatusJob: Job? = null
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         addPreferencesFromResource(R.xml.preferences_synchronization)
@@ -41,19 +48,21 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
         (activity as AppCompatActivity?)!!.supportActionBar!!.setTitle(R.string.synchronization_pref)
         updateScreen()
         updateActionBar()
-        EventBus.getDefault().register(this)
+        syncStatusJob = viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.syncStatus.collect { event -> if (event != null) syncStatusChanged(event) }
+        }
     }
 
     @SuppressLint("UseRequireInsteadOfGet")
     override fun onStop() {
         super.onStop()
-        EventBus.getDefault().unregister(this)
+        syncStatusJob?.cancel()
+        syncStatusJob = null
         (activity as AppCompatActivity?)!!.supportActionBar!!.subtitle = ""
     }
 
-    @Subscribe(threadMode = ThreadMode.MAIN, sticky = true)
     @SuppressLint("UseRequireInsteadOfGet")
-    fun syncStatusChanged(event: SyncServiceEvent) {
+    private fun syncStatusChanged(event: SyncServiceEvent) {
         if (!SynchronizationSettings.isProviderConnected()) {
             return
         }
