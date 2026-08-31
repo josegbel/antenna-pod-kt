@@ -4,8 +4,10 @@ import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import de.danoeh.antennapod.event.SyncServiceEvent
+import de.danoeh.antennapod.storage.preferences.SynchronizationSettings
 import de.danoeh.antennapod.ui.preferences.R
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.callbackFlow
@@ -30,6 +32,37 @@ class SynchronizationPreferencesViewModel : ViewModel() {
         SharingStarted.WhileSubscribed(stopTimeoutMillis = 0, replayExpirationMillis = 0),
         null
     )
+
+    private val _uiState = MutableStateFlow(SyncSettingsUiState())
+    val uiState: StateFlow<SyncSettingsUiState> = _uiState
+
+    fun onStarted() {
+        _uiState.value = _uiState.value.copy(
+            subtitle = if (SynchronizationSettings.isProviderConnected()) {
+                SyncSubtitle.LastSyncReport(
+                    SynchronizationSettings.isLastSyncSuccessful(),
+                    SynchronizationSettings.getLastSyncAttempt()
+                )
+            } else {
+                SyncSubtitle.Absent
+            }
+        )
+    }
+
+    fun onSyncEvent(event: SyncServiceEvent) {
+        _uiState.value = _uiState.value.copy(
+            subtitle = if (event.messageResId == R.string.sync_status_error ||
+                event.messageResId == R.string.sync_status_success
+            ) {
+                SyncSubtitle.LastSyncReport(
+                    SynchronizationSettings.isLastSyncSuccessful(),
+                    SynchronizationSettings.getLastSyncAttempt()
+                )
+            } else {
+                SyncSubtitle.Message(event.messageResId)
+            }
+        )
+    }
 }
 
 data class SyncSettingsUiState(

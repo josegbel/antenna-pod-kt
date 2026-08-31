@@ -42,40 +42,60 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
         updateScreen()
     }
 
-    @SuppressLint("UseRequireInsteadOfGet")
     override fun onStart() {
         super.onStart()
-        (activity as AppCompatActivity?)!!.supportActionBar!!.setTitle(R.string.synchronization_pref)
         updateScreen()
-        updateActionBar()
+        viewModel.onStarted()
         syncStatusJob = viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.syncStatus.collect { event -> if (event != null) syncStatusChanged(event) }
+            launch { viewModel.uiState.collect { render(it) } }
+            launch {
+                viewModel.syncStatus.collect { event -> if (event != null) syncStatusChanged(event) }
+            }
         }
     }
 
-    @SuppressLint("UseRequireInsteadOfGet")
     override fun onStop() {
         super.onStop()
         syncStatusJob?.cancel()
         syncStatusJob = null
-        (activity as AppCompatActivity?)!!.supportActionBar!!.subtitle = ""
+        actionBar().subtitle = ""
     }
 
-    @SuppressLint("UseRequireInsteadOfGet")
     private fun syncStatusChanged(event: SyncServiceEvent) {
         if (!SynchronizationSettings.isProviderConnected()) {
             return
         }
         updateScreen()
-        if (event.messageResId == R.string.sync_status_error ||
-            event.messageResId == R.string.sync_status_success
-        ) {
-            updateLastSyncReport(
-                SynchronizationSettings.isLastSyncSuccessful(),
-                SynchronizationSettings.getLastSyncAttempt()
+        viewModel.onSyncEvent(event)
+    }
+
+    @SuppressLint("UseRequireInsteadOfGet")
+    private fun actionBar() = (activity as AppCompatActivity?)!!.supportActionBar!!
+
+    private fun render(state: SyncSettingsUiState) {
+        val actionBar = actionBar()
+        actionBar.setTitle(state.titleRes)
+        actionBar.subtitle = when (val subtitle = state.subtitle) {
+            SyncSubtitle.Absent -> null
+            SyncSubtitle.Cleared -> ""
+            is SyncSubtitle.Message -> getString(subtitle.resId)
+            is SyncSubtitle.LastSyncReport -> String.format(
+                "%1\$s (%2\$s)",
+                getString(
+                    if (subtitle.successful) {
+                        R.string.gpodnetsync_pref_report_successful
+                    } else {
+                        R.string.gpodnetsync_pref_report_failed
+                    }
+                ),
+                DateUtils.getRelativeDateTimeString(
+                    context,
+                    subtitle.attemptedAt,
+                    DateUtils.MINUTE_IN_MILLIS,
+                    DateUtils.WEEK_IN_MILLIS,
+                    DateUtils.FORMAT_SHOW_TIME
+                )
             )
-        } else {
-            (activity as AppCompatActivity?)!!.supportActionBar!!.setSubtitle(event.messageResId)
         }
     }
 
@@ -112,7 +132,7 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
             Snackbar.make(view!!, R.string.pref_synchronization_logout_toast, Snackbar.LENGTH_LONG).show()
             SynchronizationSettings.setSelectedSyncProvider(null)
             updateScreen()
-            updateActionBar()
+            viewModel.onStarted()
             true
         }
     }
@@ -152,19 +172,6 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
             findPreference<Preference>(PREFERENCE_LOGOUT)!!.setSummary(formattedSummary)
         } else {
             findPreference<Preference>(PREFERENCE_LOGOUT)!!.setSummary(null)
-        }
-    }
-
-    @SuppressLint("UseRequireInsteadOfGet")
-    private fun updateActionBar() {
-        // Do not call from onCreate; ActionBar is not yet available at that point
-        if (SynchronizationSettings.isProviderConnected()) {
-            updateLastSyncReport(
-                SynchronizationSettings.isLastSyncSuccessful(),
-                SynchronizationSettings.getLastSyncAttempt()
-            )
-        } else {
-            (activity as AppCompatActivity?)!!.supportActionBar!!.subtitle = null
         }
     }
 
@@ -224,28 +231,6 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
 
     private val selectedSyncProviderKey: String?
         get() = SynchronizationSettings.getSelectedSyncProviderKey()
-
-    @SuppressLint("UseRequireInsteadOfGet")
-    private fun updateLastSyncReport(successful: Boolean, lastTime: Long) {
-        val status = String.format(
-            "%1\$s (%2\$s)",
-            getString(
-                if (successful) {
-                    R.string.gpodnetsync_pref_report_successful
-                } else {
-                    R.string.gpodnetsync_pref_report_failed
-                }
-            ),
-            DateUtils.getRelativeDateTimeString(
-                context,
-                lastTime,
-                DateUtils.MINUTE_IN_MILLIS,
-                DateUtils.WEEK_IN_MILLIS,
-                DateUtils.FORMAT_SHOW_TIME
-            )
-        )
-        (activity as AppCompatActivity?)!!.supportActionBar!!.subtitle = status
-    }
 
     @StringRes
     private fun getProviderSummary(provider: SynchronizationProvider): Int {
