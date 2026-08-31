@@ -47,8 +47,44 @@ when it happens; it is evidence the underlying architectural problem (not just t
 executable test — reaching it needs either MockWebServer or the injectable `GpodnetService` this
 milestone's DI work produces anyway. Close it here if convenient, or explicitly hand it to Milestone 18.
 
+**Outcome (done, PR pending):** both RxJava call sites converted to `lifecycleScope.launch` +
+`withContext(ioDispatcher)`; the sticky `SyncServiceEvent` subscription replaced by a
+`callbackFlow`/`stateIn(WhileSubscribed(0,0))` bridge in a new `SynchronizationPreferencesViewModel`
+scoped to `SynchronizationPreferencesFragment` only. Per-behavior preserve/fix: the two discarded
+`Disposable`s → **FIXED** (structurally forced by `lifecycleScope`); the `devices` race → **PRESERVED**
+(`@Volatile` count stays 3); sticky-replay → **PRESERVED** (`StateFlow<SyncServiceEvent?>(null)`); Gap 16 →
+**PRESERVED**, now pinned executably (`testWrongPasswordErrorPathThrowsFromNullCause`) and handed to
+Milestone 18 by name (below). Slice `!!` 49 → 41 (the five ActionBar statements collapsed to one
+`actionBar()` helper). `kotlinx-coroutines-test` deliberately not catalogued (see Milestone 18). The
+Gpodder wizard fields (`currentStep`/`devices`/`username`/`password`/`selectedDevice`) stayed on the
+fragment — six characterization tests reach them by reflected name — so the MVVM layer after this
+milestone covers **one of the slice's four files, and within it only the ActionBar and the sync event**,
+not the screen body. What Milestone 20 still owns is spelled out in its section below.
+
 ### Milestone 18 — `di` wiring
 Wire the ViewModel (from Milestone 17) and a sync-settings repository abstraction over `:storage:preferences`'s statics through Hilt (infra from Milestone 16), replacing `ClientConfigurator`'s static-init-plus-mutable-global-singleton pattern for this slice specifically. `SynchronizationQueue.instance` (a mutable public `var` global today) should be bound as a provided dependency rather than read from the global.
+
+**Inherited from Milestone 17, by name:**
+- **Gap 16 ships preserved and is Milestone 18's to fix.** `GpodderAuthenticationFragment.kt`'s login
+  error handler still reads `error.cause!!.message`, which NPEs and crashes the app on the most common
+  gpodder.net login failure (`GpodnetServiceAuthenticationException("Wrong username or password")` carries
+  no cause). Milestone 17 pinned it executably (`testWrongPasswordErrorPathThrowsFromNullCause`) and
+  deliberately did not fix it — a crash fix inside an equivalence-proving diff makes the proof unreadable.
+  The one-line fix is `error.cause?.message ?: error.message`; with Milestone 18's injected `GpodnetService`
+  it can be asserted through the real failure path rather than a reflected fake. When fixed: invert that
+  test to assert the rendered message, and update Milestone 15's `AC13` grep pin and
+  `ui/preferences/README.md` convention 4. José's OQ1 (ship it preserved for one more milestone vs fix now)
+  is still open and non-blocking.
+- **`kotlinx-coroutines-test` becomes genuinely necessary here.** Milestone 17 kept every coroutine
+  single-threaded and testable without it. Once a `SynchronizationPreferencesViewModel` read becomes
+  `suspend` behind an injected repository, `runTest`/`TestDispatcher` is the right tool — catalogue it as
+  Milestone 18 toolchain work (same for Turbine if a flow-assertion library is wanted).
+- **The five `SynchronizationQueue.instance!!` sites stay for Milestone 18.** Three in
+  `SynchronizationPreferencesFragment.kt` (the sync / force-full-sync / logout preference-row listeners),
+  two in `GpodderAuthenticationFragment.kt` (host step, finish step). Milestone 17's ViewModel takes no
+  constructor dependencies on purpose — taking `SynchronizationQueue` there would define the DI seam this
+  milestone owns, and would give `RecordingSynchronizationQueue` (installed via the global by every test in
+  the suite) a second injection path.
 
 **Milestone 15's characterization suite is this milestone's regression net.** Every test in
 `ui/preferences/src/test/java/.../screen/synchronization/` reads and writes the static preference
@@ -62,7 +98,24 @@ same time it's supposed to be proving equivalence proves nothing.
 Decide whether `SynchronizationSettings`/`SynchronizationCredentials` convert to Kotlin at all. Research found this is genuinely cross-module, not local: `SynchronizationSettings` has 10 call sites outside the slice across `:net:sync:service`, `:net:download:service`, `:app`, and this module's own `NotificationPreferencesFragment`; `SynchronizationCredentials.clear()` pulls in `UserPreferences.setGpodnetNotificationsEnabled()`, coupling into the module's largest Java class; and `:storage:preferences` has no test source set at all, so this milestone carries its own characterization-test bill before any conversion. A smaller alternative that satisfies Milestone 18's DI seam without a full conversion: wrap the existing Java statics behind an injectable Kotlin interface and leave `:storage:preferences` itself in Java, same interop pattern used throughout this portfolio (Kotlin calling Java is not a hazard). Recommend deciding this on its own merits rather than as a default "finish the migration" move.
 
 ### Milestone 20 — `compose`
-Replace `PreferenceFragmentCompat` + `preferences_synchronization.xml` with a `ComposeView` hosting real Compose content (locked decision — not an `AndroidView` wrapper around the existing XML). Requires Milestones 16 (toolchain) and 17 (ViewModel) done first. Open questions Research flagged, not yet answered:
+Replace `PreferenceFragmentCompat` + `preferences_synchronization.xml` with a `ComposeView` hosting real Compose content (locked decision — not an `AndroidView` wrapper around the existing XML). Requires Milestones 16 (toolchain) and 17 (ViewModel) done first.
+
+**What Milestone 17 delivered vs. what Milestone 20 still owns.** Milestone 17 handed over the class
+(`SynchronizationPreferencesViewModel`), the `StateFlow`-of-immutable-`data class` pattern, the collection
+seam and the `ui/preferences/README.md` conventions that fix that pattern in place — so `compose` does not
+have to invent an architecture first. It did **not** hand over the screen's state model: the ViewModel
+holds only the ActionBar title/subtitle (`SyncSettingsUiState`) and the sync event. `updateScreen()` and
+everything it renders — `isProviderConnected()`, the provider summary and icon, username/host-url, per-row
+enabled/visible state — still live in the fragment, read on demand from `:storage:preferences` statics.
+**Hoisting that into `SyncSettingsUiState` is Milestone 20's work.** Also: the three auth dialogs
+(`GpodderAuthenticationFragment`, `NextcloudAuthenticationFragment`, `AuthenticationDialog`) have **no**
+ViewModel — the Gpodder wizard's `currentStep`/`devices`/`username`/`password`/`selectedDevice` stayed
+fragment fields because six characterization tests reach them by reflected name. If Milestone 20 decides
+the dialogs move to Compose, a Gpodder-wizard ViewModel is **that milestone's scope**, and its
+characterization-suite rewrite is forced there by the UI rewrite rather than colliding with an equivalence
+proof.
+
+Open questions Research flagged, not yet answered:
 - **Settings search stays working or is explicitly degraded.** `MainPreferencesFragment` indexes `preferences_synchronization.xml` for search, and `PreferenceActivity.onSearchResultClicked` needs a live `PreferenceFragmentCompat` to highlight the matched row. All three fix options (keep the XML as index-only and accept degraded highlighting; change `openScreen`'s signature across 9 `:app` call sites; special-case this screen in `PreferenceActivity`) touch files outside the slice.
 - **Do the 3 dialogs move to Compose too, or only the top-level screen?** `GpodderAuthenticationFragment` (4-step `ViewFlipper` wizard, 5 XML layouts) is the largest UI rewrite in the slice if included; `AuthenticationDialog` is subclassed from `:app` by two Java classes, so rewriting it changes an external API. Not decided by the locked hosting decision, which only names "the new screen."
 - **Theming.** The app resolves one of 6 View themes at runtime (Light/Dark/TrueBlack × dynamic/non-dynamic wallpaper-derived color) via `ThemeSwitcher`; there's no existing View-Material3 → Compose `MaterialTheme` bridge in the repo. Decide which theme variants get Paparazzi-snapshotted and why — snapshotting all 6 against a Compose `ColorScheme` that can't reproduce wallpaper-derived dynamic color isn't meaningful.
