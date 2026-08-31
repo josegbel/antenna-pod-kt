@@ -39,7 +39,6 @@ class GpodderAuthenticationFragmentAsyncCharacterizationTest {
 
     @Before
     fun setUp() {
-        System.setProperty("kotlinx.coroutines.stacktrace.recovery", "false")
         context = RuntimeEnvironment.getApplication()
         SynchronizationSettings.init(context)
         SynchronizationCredentials.init(context)

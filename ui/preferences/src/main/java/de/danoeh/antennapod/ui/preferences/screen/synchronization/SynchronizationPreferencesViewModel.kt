@@ -72,7 +72,6 @@ data class SyncSettingsUiState(
 
 sealed interface SyncSubtitle {
     data object Absent : SyncSubtitle
-    data object Cleared : SyncSubtitle
     data class Message(@StringRes val resId: Int) : SyncSubtitle
     data class LastSyncReport(val successful: Boolean, val attemptedAt: Long) : SyncSubtitle
 }

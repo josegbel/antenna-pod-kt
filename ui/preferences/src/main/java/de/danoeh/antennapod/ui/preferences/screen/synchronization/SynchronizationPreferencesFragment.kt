@@ -77,7 +77,6 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
         actionBar.setTitle(state.titleRes)
         actionBar.subtitle = when (val subtitle = state.subtitle) {
             SyncSubtitle.Absent -> null
-            SyncSubtitle.Cleared -> ""
             is SyncSubtitle.Message -> getString(subtitle.resId)
             is SyncSubtitle.LastSyncReport -> String.format(
                 "%1\$s (%2\$s)",

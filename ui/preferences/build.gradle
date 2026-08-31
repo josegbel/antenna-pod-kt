@@ -74,3 +74,10 @@ dependencies {
     // it is not on this module's test compile classpath transitively via :net:sync:service-interface.
     testImplementation project(':model')
 }
+
+tasks.withType(Test).configureEach {
+    // Gradle enables -ea, which turns on kotlinx-coroutines stack-trace recovery; that wraps thrown
+    // exceptions and shifts their cause chain. Real Android and release builds have it off. Disabling
+    // it here keeps the sync-settings coroutine characterization tests matching production behaviour.
+    systemProperty "kotlinx.coroutines.stacktrace.recovery", "false"
+}

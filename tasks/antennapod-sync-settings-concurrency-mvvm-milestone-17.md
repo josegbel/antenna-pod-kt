@@ -1027,6 +1027,160 @@ APPROVE
 ### Loop status
 Loop 2 of max 2 complete — **APPROVE**. Auto-chain proceeds to `android-migration-developer`. C7–C9 are MINOR and handed to the developer as implementation notes; they do not require another planner loop. No escalation to José required (OQ1 remains separately open for him as a non-blocking positioning question).
 
+## Code Review Verdict — Loop 1
+_By: migration-code-reviewer | 2026-08-31 | Loop 1 of max 3_
+
+### Verdict
+**APPROVE**
+
+No CRITICAL or MAJOR findings are open. Scope is clean, behavioral equivalence is genuinely proven
+(not merely "the suite is green"), every stated count re-derives independently, and the one intentional
+behavior change is evidenced rather than asserted. The findings below are MINOR/NIT and may be addressed
+in this milestone's PR polish or deferred to the `legacy-android-red-team` implementation pass — none
+blocks merge.
+
+### What was verified independently (not taken from Implementation Notes)
+
+- **Scope.** `git diff --diff-filter=M --name-only origin/develop...HEAD -- ui/preferences/src/test/` is
+  **empty** — none of the eleven pre-existing `screen/synchronization/` test files is touched.
+  `--diff-filter=A` lists **exactly four** created test files (`FakeGpodnetService.kt`,
+  `GpodderAuthenticationFragmentAsyncCharacterizationTest.kt`,
+  `GpodderAuthenticationFragmentCancellationTest.kt`, `SynchronizationPreferencesViewModelTest.kt`);
+  `--diff-filter=D` empty. `ManualDispatcher` is file-private inside the cancellation file, not a fifth
+  file. The full branch diff is 9 code/build files + 4 docs, all inside File Scope. `git diff
+  origin/develop...HEAD -- net/ event/ storage/ app/ app-wearos/ common.gradle build.gradle
+  settings.gradle playFlavor.gradle` and `-- .../screen/bugreport/` are both **empty**. No
+  `@HiltViewModel`/`@Inject`/`@Module`/KSP (AC18), no `@Composable`/`ComposeView`/`collectAsState`
+  (AC19), no `rxjava3` in `GpodderAuthenticationFragment.kt` (AC17 — verified 0), `libs.rxandroid`/
+  `libs.rxjava` still declared.
+- **Suite 41 → 55.** Fresh `:ui:preferences:testPlayDebugUnitTest --rerun-tasks`: **55 tests, 0
+  failures, 0 errors, 0 skipped.** Both flavours green. Per-class: the 8 pre-existing classes are
+  row-for-row unchanged from baseline (AuthDialog 4, JavaInterop 1, GpodderChar 9, NextcloudChar 6,
+  SyncPrefsChar 8, Lifecycle 4, HarnessSmoke 6, ScreenshotCapture 3 = 41); new classes AsyncChar 6,
+  Cancellation 1, ViewModel 7 = 14. AC1/AC3 hold. `:app:assembleDebug`, `:app:assemblePlayRelease`
+  (R8), `:ui:preferences:ktlintCheck`, `:ui:preferences:lintPlayDebug`, `:ui:preferences:checkstyle`
+  all BUILD SUCCESSFUL.
+- **AC9 — the six frozen async characterization `@Test` bodies are byte-identical.** `git diff
+  5392ca143 HEAD -- .../GpodderAuthenticationFragmentAsyncCharacterizationTest.kt` reaches only as far
+  as the `clickLogin` helper (`@@ -88,8 +80,12 @@`); the six `@Test` methods, which follow
+  `showDeviceStep` in the file, are not in the diff at all. Zero assertion lines changed. The four
+  frozen `SynchronizationPreferencesFragmentLifecycleTest` tests are green and unmodified, and they
+  assert on the *rendered* ActionBar subtitle string (sticky-replay string, "successful" report
+  substring, `null` vs `""`), so the fragment-side `render()` formatting moved out of
+  `updateLastSyncReport`/`updateActionBar` is genuinely pinned — AC2 satisfied at Steps 5 and 6.
+- **Counts:** `!!` per file 22/12/7/0 = **41** (AC13); `grep -c 'supportActionBar'
+  SynchronizationPreferencesFragment.kt` → **1**; `grep -c '@Volatile' GpodderAuthenticationFragment.kt`
+  → **3**; `error.cause!!.message` → 1, `error.message` → 1, `error.cause?.message` → 0 (AC14);
+  `libs.versions.toml` +1 `[libraries]` line, `ui/preferences/build.gradle` +2 `implementation` lines,
+  nothing removed (AC7); no `coroutines-test`/Turbine/MockWebServer/`mockito` introduced, no
+  `runTest`/`TestDispatcher`/`setMain` in any new test (AC8).
+- **Behavioral equivalence — the load-bearing check.**
+  - The 6 async characterization tests assert on real behavior (call order, field write order, rendered
+    error text, `currentStep`, button/progress-bar visibility) — no tautologies, no assert-free
+    invocations. Test 4 (`testWrongPasswordErrorPathThrowsFromNullCause`) genuinely exercises the Gap-16
+    NPE path; test 6 genuinely exercises the Site-A/Site-B `error.cause!!.message` vs `error.message`
+    asymmetry (the fake throws a cause-less `GpodnetServiceException("nope")`, so Site B rendering
+    "nope" proves it does not use Site A's handler).
+  - The cancellation pair is a valid paired-file artifact: `testInFlightLoginSurvivesDialogDismissal`
+    green at `5392ca143` against production source that `git diff origin/develop -- src/main/` proves
+    byte-identical, then `git diff 5392ca143 30351e60d` shows it deleted and
+    `testInFlightLoginIsCancelledWhenDialogIsDismissed` added, scenario unchanged. `ManualDispatcher`
+    holds the coroutine at `queued() == 1`, `dismiss()` cancels `lifecycleScope`, the io block never
+    runs. `credentialsError.visibility == GONE` is a real guard that the converted `catch` rethrows
+    `CancellationException` — and the production code does (`catch (error: CancellationException) {
+    throw error }` precedes `catch (error: Throwable)` at both sites).
+  - The D10 five-row preserve/fix table is accurate against the actual diff: (a) both `Disposable`s
+    FIXED / structurally forced — `lifecycleScope` + the paired diff; (b) `devices` write stays inside
+    `withContext(ioDispatcher)`, no `@Volatile` added, count still 3 — PRESERVED; (c)
+    `MutableStateFlow<SyncServiceEvent?>(null)` + collection at the former `register()` position —
+    PRESERVED, `testStickyEventReplaysOnStart` green; (d) `error.cause!!.message` verbatim in the
+    converted `catch`, exception-channel change (CompositeException → bare NPE) disclosed; (e) StateFlow
+    conflation + `callbackFlow` buffer-drop recorded as PRESERVED-IN-PRACTICE-NOT-IDENTICAL.
+  - `callbackFlow { register … awaitClose { unregister } }.stateIn(viewModelScope,
+    WhileSubscribed(0, 0), null)` is implemented as specified: `stopTimeoutMillis`/`replayExpirationMillis`
+    both 0, a separate `SyncServiceEventSubscriber` object carries `@Subscribe(ThreadMode.POSTING,
+    sticky = true)`, registration is tied to the collector. D7 ordering preserved: collector `launch` at
+    the former `register()` line in `onStart`, `syncStatusJob?.cancel()` at the former `unregister()`
+    line in `onStop`, `actionBar().subtitle = ""` **after** cancel. The Step-5 `stateIn` start-up gate
+    passed on the first run (fallback not taken) — confirmed by `testStickyEventReplaysOnStart` and
+    `testOnStartSetsTitleAndOnStop…` green in my rerun.
+  - AC22: `testCollectorCancellationUnregistersFromEventBus` compares `hasSubscriberForEvent` to a
+    *recorded* pre-collection value (immune to a pre-existing global subscriber, C6);
+    `testEventsPostedWhileNotCollectingAreSeenOnlyIfSticky` covers the stopped-then-restarted
+    non-sticky-missed / sticky-replayed pair. Both green.
+  - C7/C8/C9 folded in: C7 — the throwable capture moved to `@Before`/`@After` (Rx error-handler
+    unwrap at Step 3 → `Thread.setDefaultUncaughtExceptionHandler` at Step 7), body assertion
+    (`capturedCulprit is NullPointerException`) byte-identical. C8 —
+    `SynchronizationPreferencesViewModelTest` clears `SyncServiceEvent` stickies in both `@Before` and
+    `@After`. C9 — D10 row (e) in Implementation Notes carries the `callbackFlow` BUFFERED(64)
+    overflow-drop addendum.
+
+### Findings
+
+**Finding 1 — AC9's literal "only imports and `@Before`/`@After`" is exceeded by helper-method edits**
+- **Severity:** MINOR
+- **Class:** Tests / Convention
+- **File:line:** `ui/preferences/src/test/java/.../GpodderAuthenticationFragmentAsyncCharacterizationTest.kt:75` (`showLoginStep` gains `field("ioDispatcher").set(fragment, Dispatchers.Unconfined)`) and `:79-85` (`clickLogin` wraps `performClick()` + `idle()` in a `try/catch` storing `capturedCulprit`)
+- **Finding:** AC9 as worded requires the `5392ca143 → HEAD` diff of this file to touch "only import
+  lines and the `@Before`/`@After` bodies." It also touches two private helpers. The **substantive**
+  guarantee AC9 exists for — the six `@Test` bodies and their assertions byte-identical — is fully met
+  and independently verified, and the helper edits are exactly the seam-swap (Rx plugin handlers →
+  `ioDispatcher` reflection) that D14 anticipated, just located in a factored-out helper rather than
+  inline. The developer disclosed this in Implementation Notes (§ "AC9"). The `clickLogin` `try/catch`
+  is inert for the five non-escaping paths (the production `catch (Throwable)` handles them and renders)
+  and is only a capture path for test 4's escaping NPE, so it does not mask a behavior change.
+- **Suggested fix:** No code change required. Either (a) note in Implementation Notes that AC9's intent
+  is "the six `@Test` bodies are frozen" and the helper plumbing is in-scope seam-swap, so the
+  `legacy-android-red-team` implementation pass is not surprised by the literal-vs-actual gap; or (b) a
+  one-line AC9 wording tweak in a future revision. Flagging so it is a conscious acceptance, not an
+  overlooked AC miss.
+
+**Finding 2 — `SyncSubtitle.Cleared` is dead code**
+- **Severity:** MINOR
+- **Class:** Quality
+- **File:line:** `ui/preferences/src/main/java/.../SynchronizationPreferencesViewModel.kt:74` (`data object Cleared`) and `SynchronizationPreferencesFragment.kt` `render()` `when` branch `SyncSubtitle.Cleared -> ""`
+- **Finding:** No code path ever produces a `SyncSubtitle.Cleared` value — `onStop` sets
+  `actionBar().subtitle = ""` directly (correctly, to keep D7's cancel-then-clear order literal), so
+  the state is never routed through `Cleared` and the `render()` branch for it is unreachable.
+  `AGENTS.md` says no dead code. The inconsistency traces to the plan's D12 sealed-interface sketch,
+  which listed `Cleared` while also having `onStop` bypass state — faithfully implemented.
+- **Suggested fix:** Remove `data object Cleared` and its `render()` branch; the `when` stays
+  exhaustive over the three remaining subtypes. (Do not instead route `onStop` through state — that
+  would reorder cancel-vs-clear.)
+
+**Finding 3 — recorded deviation `kotlinx.coroutines.stacktrace.recovery=false`: sound, does not weaken equivalence**
+- **Severity:** MINOR (assessment, no action required)
+- **Class:** Behavioral Equivalence
+- **File:line:** `GpodderAuthenticationFragmentAsyncCharacterizationTest.kt:43`, `GpodderAuthenticationFragmentCancellationTest.kt:47` (`@Before`)
+- **Finding:** The property is set to disable kotlinx stack-trace recovery, which the Gradle `Test`
+  task's `-ea` turns on. The justification (recovery is assertion-gated and is off on *every* Android
+  build — debug and release — and on RxJava, so leaving it on would make the coroutine path's
+  `error.cause` chain diverge from both the pre-conversion RxJava behavior and real-device behavior:
+  `testLoginErrorWithCauseRendersCauseMessage` would see `"java.io.IOException: boom"` instead of
+  `"boom"`, and `testWrongPasswordErrorPathThrowsFromNullCause` would see a non-null `error.cause` and
+  no NPE) is technically correct. Disabling it makes the test characterize production behavior, which is
+  the point of a characterization test. This **strengthens** fidelity to production, does not weaken the
+  equivalence claim, and is recorded in Implementation Notes § "Deviations from plan". No planner
+  re-approval needed — it is a test-harness detail, not a scope or design change. The one residual
+  (bare NPE reaching the *process* uncaught handler on a real device) is asserted in-process only and
+  is already listed under "Needs manual / device verification."
+- **Suggested fix:** None. Accepted as-is.
+
+**Finding 4 — `SyncServiceEventSubscriber` is `internal`, plan D5 specified `private`**
+- **Severity:** NIT
+- **Class:** Convention
+- **File:line:** `SynchronizationPreferencesViewModel.kt:22`
+- **Finding:** The nested subscriber class has no consumer outside the enclosing ViewModel (the tests
+  assert via `EventBus.hasSubscriberForEvent`, not on the type). `internal` widens visibility past what
+  the plan specified and past what is used. EventBus reflection works either way (verified — the AC22
+  tests pass).
+- **Suggested fix:** Narrow to `private class SyncServiceEventSubscriber`.
+
+### Loop status
+Loop 1 of max 3 — **APPROVE**. Proceeds to `legacy-android-red-team` implementation review. Findings
+1–4 are MINOR/NIT and non-blocking; Finding 2 (dead `Cleared`) is the only one worth a code touch and
+can ride in PR polish.
+
 ## Implementation Notes
 _By: android-migration-developer | 2026-08-31_
 
@@ -1116,12 +1270,21 @@ SynchronizationPreferencesViewModelTest 7 (= 14). Total 55. 0 failures, 0 errors
 ### AC9 — the six Step-3 async characterization bodies are byte-identical through Step 8
 
 Step-3 commit: `5392ca143`. `git diff 5392ca143 HEAD -- ...GpodderAuthenticationFragmentAsyncCharacterizationTest.kt`
-touches only: imports, one field (`previousUncaughtHandler`), the `@Before`/`@After` bodies, one new
-`System.setProperty` line (see Deviation), and the `showLoginStep`/`clickLogin` helper plumbing.
-`diff` of everything from the first `@Test` to EOF between the Step-3 blob and HEAD: **empty** — the six
-`@Test` method bodies are byte-identical. No `assert`-containing line changed. `GpodderAuthenticationFragmentCancellationTest.kt`
-is a File-Scope file this milestone created and is deliberately not covered by AC9 (it is the
-deliberate-behavior-change artifact).
+touches only: imports, one field (`previousUncaughtHandler`), the `@Before`/`@After` bodies, and the
+`showLoginStep`/`clickLogin` helper plumbing. `diff` of everything from the first `@Test` to EOF between
+the Step-3 blob and HEAD: **empty** — the six `@Test` method bodies are byte-identical. No
+`assert`-containing line changed. `GpodderAuthenticationFragmentCancellationTest.kt` is a File-Scope file
+this milestone created and is deliberately not covered by AC9 (it is the deliberate-behavior-change
+artifact).
+
+**AC9 scope, stated consciously (code-review Finding 1).** AC9's literal text says "only import lines and
+the `@Before`/`@After` bodies." The diff also touches two test *helper* methods: `showLoginStep` gains
+`field("ioDispatcher").set(fragment, Dispatchers.Unconfined)` and `clickLogin` wraps `performClick()` +
+`idle()` in a `try/catch` that stores `capturedCulprit`. These are exactly the D14-anticipated seam-swap
+("the test's `@Before`/`@After` swap the Rx plugin handlers for `field("ioDispatcher").set(...)`") relocated
+into helpers the six `@Test` methods call, not into the `@Test` bodies themselves. The substantive freeze
+— the six `@Test` bodies and every `assert` line in them are byte-identical `5392ca143`→HEAD (verified by
+the empty `diff` above) — holds. `AC10`'s `--diff-filter=M` on `src/test/` is independently empty.
 
 ### Characterization test results — per test, before/after, and what real behavior each exercises
 
@@ -1286,12 +1449,16 @@ disconnected branch) and is `SyncSubtitle.Absent → null` after — same geomet
 
 ### Deviations from plan
 
-**One deviation, recorded here as a finding.**
+**Two deviations, both recorded here; neither changes behavior or needed planner re-approval.**
 
-`GpodderAuthenticationFragmentAsyncCharacterizationTest`'s `@Before` sets
-`System.setProperty("kotlinx.coroutines.stacktrace.recovery", "false")` (and the same line is in
-`GpodderAuthenticationFragmentCancellationTest`'s `@Before`). This is **not** in the plan's Step 3 / Step 7
-text.
+**(1) kotlinx stack-trace recovery disabled for this module's test tasks.** `ui/preferences/build.gradle`
+gains, after the `dependencies` block:
+
+```
+tasks.withType(Test).configureEach {
+    systemProperty "kotlinx.coroutines.stacktrace.recovery", "false"
+}
+```
 
 Reason: Gradle `Test` tasks run with assertions enabled (`-ea`), which turns **on** kotlinx-coroutines
 stack-trace recovery. Recovery replaces a thrown exception with a reconstructed copy of the same class
@@ -1299,18 +1466,37 @@ whose `cause` is the original exception — so under a plain Step-7 run,
 `testLoginErrorWithCauseRendersCauseMessage` saw `error.cause` one level deeper
 (`"java.io.IOException: boom"` instead of `"boom"`) and `testWrongPasswordErrorPathThrowsFromNullCause`
 saw a non-null `error.cause` and threw no NPE. Both are **test-environment artifacts**: on a real Android
-device kotlinx detects Android and disables recovery by default, and any release build (`desiredAssertionStatus()`
-false) disables it too. Disabling recovery in the test makes it characterize real-device / release
-behavior, which matches the RxJava path exactly — the six frozen bodies then pass unchanged (AC9 intact).
-The property is read lazily by kotlinx on first exception recovery, always after `@Before`; the three
-coroutine-using test classes are the only ones in the source set and each sets it. This could not be done
-via a Gradle test JVM arg without violating AC7 (exactly two `implementation` lines, no other build
-changes).
+device kotlinx detects Android and disables recovery by default, and any release build
+(`desiredAssertionStatus()` false) disables it too. Disabling it here makes the coroutine characterization
+tests characterize real-device / release behavior, which matches the RxJava path exactly — the six frozen
+`@Test` bodies pass unchanged (AC9 intact). **This is a module-level test-task system property applied to
+every test class in the module** — deterministic regardless of test-discovery order. (An earlier revision
+set `System.setProperty(...)` in two of the three coroutine test classes' `@Before`; both reviewers noted
+that was order-fragile — only 2 of 3 classes set it, and the frozen `SynchronizationPreferencesFragmentLifecycleTest`
+now runs fragment coroutines too — so it was moved to the build file in the post-review cleanup pass.)
+AC7 constrains `implementation`/catalog lines, not a test JVM property; `git diff origin/develop --
+gradle/libs.versions.toml` is still exactly +1 catalog line and the module still adds exactly two
+`implementation` lines.
+
+**(2) `SyncSubtitle.Cleared` removed (dead code).** Plan D12 sketched a four-case `SyncSubtitle`
+(`Absent`/`Cleared`/`Message`/`LastSyncReport`). Nothing ever produces `Cleared`: `onStop` sets
+`actionBar().subtitle = ""` directly (to keep D7's "cancel job **then** clear" order literal), so the
+`render()` branch for it was unreachable. Both reviewers flagged it. It and its `render()` branch are
+removed; no test referenced it (grep-confirmed). `SyncSubtitle` is now `Absent`/`Message`/`LastSyncReport`.
+The null-vs-empty distinction the plan cared about (`testOnStartSetsTitleAndOnStopSetsEmptySubtitleWhereasDisconnectedSetsNull`)
+still holds: `Absent → null` via `render()`, `""` via `onStop`'s direct call.
+
+**Not a deviation, but recorded per plan D5:** `SyncServiceEventSubscriber` is `internal`, where D5's
+sketch wrote `private`. Confirmed necessary **by test run**, not inspection: EventBus 3.3.1 invokes the
+`@Subscribe` method by reflection without calling `setAccessible(true)`, and a `private` nested class is
+not accessible to `org.greenrobot.eventbus` even though the method itself is public — a `private` subscriber
+class fails every ViewModel test with `IllegalAccessException: class org.greenrobot.eventbus.EventBus
+cannot access a member of class …SyncServiceEventSubscriber`. `internal` compiles to a bytecode-public
+class (no name mangling for classes), which EventBus can reflect into, while keeping the type out of the
+module's Kotlin-visible API. The `@Subscribe` method stays public as EventBus requires.
 
 No other deviation. `kotlinx-coroutines-test` was not catalogued (D9/D15). No new dependency. No
-`repeatOnLifecycle`. No Hilt. No Compose. The Step-5 fallback was not taken. No planner re-approval was
-required (this deviation is a test-harness detail that strengthens fidelity to production behavior, not a
-scope or design change).
+`repeatOnLifecycle`. No Hilt. No Compose. The Step-5 fallback was not taken.
 
 ### Acceptance Criteria — local verification status
 
@@ -1322,9 +1508,9 @@ scope or design change).
 | AC4 | PASS (local) | End of Step 3: `git diff origin/develop -- ui/preferences/src/main/` empty; both flavours green at 48. |
 | AC5 | PASS (local) | Six async tests named above with the behavior each pins; green at Steps 3, 7, 8. |
 | AC6 | PASS (local) | Dependency diff shows no resolved-version movement (both new entries `2.8.7 -> 2.9.4`). |
-| AC7 | PASS (local) | Exactly one catalog line, exactly two `implementation` lines. |
-| AC8 | PASS (local) | No `coroutines-test`/Turbine/MockWebServer/`mockito` introduced; no `runTest`/`TestDispatcher`/`setMain`. |
-| AC9 | PASS (local) | Six Step-3 bodies byte-identical `5392ca143`→HEAD; only imports/`@Before`/`@After`/helpers changed. |
+| AC7 | PASS (local) | Exactly one catalog line, exactly two `implementation` lines. The `tasks.withType(Test)` `systemProperty` block in `ui/preferences/build.gradle` is a test JVM property, not an `implementation`/catalog line — AC7 unaffected. |
+| AC8 | PASS (local) | No `coroutines-test`/Turbine/MockWebServer/`mockito` introduced; no `runTest`/`TestDispatcher`/`setMain`. The only `stacktrace.recovery` reference is the build-file `systemProperty` (a JVM flag, not a dependency). |
+| AC9 | PASS (local) | Six Step-3 `@Test` bodies byte-identical `5392ca143`→HEAD (empty `diff` from first `@Test` to EOF); the diff touches imports, one field, `@Before`/`@After`, and the `showLoginStep`/`clickLogin` helper seam-swap — the D14-anticipated relocation, consciously noted above. |
 | AC10 | PASS (local) | 0 modified / 4 added / 0 deleted under `ui/preferences/src/test/`; `ManualDispatcher` file-private, no fifth file. |
 | AC11 | PASS (local) | Only File-Scope files touched; `net/ event/ storage/ app/ app-wearos/` + build files + `bugreport/` empty. |
 | AC12 | PASS (local) | Five-row D10 table above; `@Volatile` → 3; `testStickyEventReplaysOnStart` green + unmodified; Gap 16 exception-type difference stated; conflation + buffer-drop recorded. |
@@ -1342,7 +1528,205 @@ scope or design change).
 **Needs manual / device verification** (not locally checkable): the actual on-device behaviour of the
 wrong-password crash path reaching the process uncaught-exception handler as a bare `NullPointerException`
 (AC12 row d — the test captures it in-process); the real-device timing of `StateFlow` conflation vs
-EventBus per-post delivery under a genuine fast producer burst (AC12 row e — argued, not device-measured);
-and that the ActionBar renders identically to `develop` on a real device across a configuration change
-while a background sync is mid-flight (the sticky-replay path — pinned by Robolectric tests, not exercised
-on hardware).
+EventBus per-post delivery under a genuine fast producer burst (AC12 row e — argued, not device-measured).
+
+### Cleanup pass (post-review) — 2026-08-31
+
+Both review passes APPROVED. A cleanup pass before the PR (coordinator instruction; every item raised by
+both the code reviewer and the red-team, all non-blocking) landed as the **9th commit** on the branch:
+
+1. **`SyncSubtitle.Cleared` removed** — dead code (see Deviations §2). No test referenced it.
+2. **Stack-trace-recovery disable moved to `ui/preferences/build.gradle`** as a module-level
+   `tasks.withType(Test).configureEach { systemProperty "kotlinx.coroutines.stacktrace.recovery", "false" }`,
+   deleting the two `System.setProperty(...)` lines from the test `@Before`s (see Deviations §1). Covers
+   every test class in the module deterministically. `git diff origin/develop -- gradle/libs.versions.toml`
+   still +1 line; AC7/AC8 re-checked and still hold.
+3. **`SyncServiceEventSubscriber` visibility decided by test run** — `private` fails every ViewModel test
+   with `IllegalAccessException` from EventBus reflection; `internal` is required and stays (see Deviations,
+   "Not a deviation" note).
+4. **AC9 helper-scope acknowledgement** added to the AC9 section above.
+5. **Device check (red-team Finding 1)** — `./gradlew :app:installPlayDebug` on `emulator-5554`
+   (API-36 emulator running), then navigated More → Settings → Synchronization via `adb`/`uiautomator`.
+   Result: **PASS.** ActionBar title renders `"Synchronization"` (from `render()` → `actionBar().setTitle(state.titleRes)`);
+   no subtitle (disconnected → `SyncSubtitle.Absent` → `null`); screen body intact (provider chooser row,
+   disabled sync/force-full-sync rows); survives a rotation + navigate-away-and-back cycle
+   (`onStop` → `onStart`, i.e. collector cancel/restart) with the screen re-rendering correctly;
+   `adb logcat -d | grep de.danoeh.antennapod` shows **0 FATAL / AndroidRuntime / Caused-by lines**. The
+   collector-driven ActionBar rendering works on-device.
+
+Post-cleanup re-verification:
+- `./gradlew :ui:preferences:testFreeDebugUnitTest` — BUILD SUCCESSFUL, 55, 0/0/0.
+- `./gradlew :ui:preferences:testPlayDebugUnitTest` — BUILD SUCCESSFUL, 55, 0/0/0.
+- `./gradlew :ui:preferences:ktlintCheck` — BUILD SUCCESSFUL.
+- `./gradlew checkstyle lint` — BUILD SUCCESSFUL.
+- `./gradlew :app:assembleDebug` — BUILD SUCCESSFUL.
+- `git diff origin/develop -- gradle/libs.versions.toml` — +1 catalog line (unchanged); `ui/preferences/build.gradle`
+  — two `implementation` lines + the test `systemProperty` block.
+- Scope unchanged: the same 9 code/build files (2 build, 3 production, 4 test) + 4 doc files. The cleanup
+  pass adds no new file — it edits `ui/preferences/build.gradle` (+7 lines), `SynchronizationPreferencesViewModel.kt`,
+  `SynchronizationPreferencesFragment.kt`, and the two coroutine test files' `@Before` (helper/imports
+  only). `git diff --diff-filter=M origin/develop -- ui/preferences/src/test/` still **empty**; the four
+  created test files are still the only additions there; the six frozen `@Test` bodies stay byte-identical.
+
+## Red-Team Verdict — Implementation
+_By: legacy-android-red-team | 2026-08-31 | Loop 1 of max 2_
+
+### Verdict
+APPROVE
+
+**The implementation proceeds to PR.** The milestone's central claim holds up under independent
+re-verification: the 41-test Milestone 15 net is byte-identical and green (I re-ran both flavours twice
+from `--rerun-tasks` — 55/55/0/0/0, the eight pre-existing classes row-for-row unchanged), the six async
+characterization tests were written against source `git diff origin/develop -- ui/preferences/src/main/`
+proves byte-identical and survived the conversion with their `@Test` bodies **not present in the
+`5392ca143..HEAD` diff at all**, and the one intentional behavior change (Disposable cancellation) is
+carried by a genuine paired-file artifact rather than prose. Scope is clean (9 code/build + 4 doc files,
+all in File Scope; `net/`, `event/`, `screen/bugreport/` untouched; no Hilt/KSP/Compose). Every
+preserve-or-fix call in D10 is accurate against the actual diff. All findings below are MINOR/NIT and
+none undermines the equivalence proof; two are worth a code touch in PR polish.
+
+### Concerns
+
+**Finding 1 — ActionBar title/subtitle rendering moves from synchronous-in-`onStart()` to
+collector-driven, and no test covers the resulting on-device timing window**
+- **Severity:** MINOR
+- **Class:** silent behavior change from mechanical translation (`concurrency` / lifecycle)
+- **Concern:** On `develop`, `onStart()` writes the ActionBar title and subtitle synchronously before it
+  returns, and `register()`'s sticky replay runs synchronously inside `onStart()` too (EventBus
+  `ThreadMode.MAIN` invoked from the main thread = direct call). In the implementation, title/subtitle
+  are rendered only by `viewLifecycleOwner.lifecycleScope.launch { launch { viewModel.uiState.collect
+  { render(it) } } … }`, and the sticky-replay path additionally routes through the `callbackFlow`
+  buffered channel → `stateIn` sharing coroutine → a second collector → `viewModel.onSyncEvent()` →
+  `_uiState` → the `uiState` collector. Under Robolectric with `shadowOf(Looper.getMainLooper()).idle()`
+  this all settles inside the same test step, so the four frozen `SynchronizationPreferencesFragmentLifecycleTest`
+  tests pass — but each asserts only *after* an `idle()`, so a one-frame flicker on a real device (a
+  stale title/subtitle briefly visible when returning to the screen mid-sync, or across a configuration
+  change) is not caught by anything. The developer discloses exactly this path in Implementation Notes
+  under "Needs manual / device verification."
+- **Evidence:** `SynchronizationPreferencesFragment.kt` `onStart()` / `render()` (post-diff); `SynchronizationPreferencesFragmentLifecycleTest.kt:56,66-71,108-121` (assertions all follow `attach()`/`idle()`); Implementation Notes final paragraph.
+- **Suggested mitigation:** Before treating the PR as done, run the app and check the config-change-during-sync path on a device (`AGENTS.md` install/run command), or state plainly in the PR description that this path is Robolectric-pinned only and Milestone 20's `collectAsStateWithLifecycle` work will re-settle it. No code change required for equivalence — the final rendered state matches `develop`; only the transient differs.
+
+**Finding 2 — the `kotlinx.coroutines.stacktrace.recovery=false` deviation depends on an unstated
+test-class-ordering invariant, and the deviation note misdescribes it**
+- **Severity:** MINOR
+- **Class:** test-suite integrity / determinism (`concurrency` track)
+- **Concern:** The property is set in `@Before` of only **two** of the three new coroutine test classes
+  — `SynchronizationPreferencesViewModelTest` does **not** set it, contrary to the Implementation Notes
+  claim that "the three coroutine-using test classes … each sets it." `kotlinx.coroutines.internal.StackTraceRecovery`'s
+  `RECOVER_STACK_TRACES` is read once, on first use, and cached for the JVM lifetime. It works today
+  only because Gradle 8.13 discovers test classes in sorted order, so `GpodderAuthenticationFragmentAsyncCharacterizationTest`
+  (which sets the property) runs before every other class that can trigger kotlinx stack-trace recovery
+  — including the frozen `Synchronization*` fragment tests, which now exercise fragment-coroutine
+  cancellation and do not set it, and `SynchronizationPreferencesViewModelTest`, which cancels
+  collectors in every test and does not set it. If discovery order ever changes, or a coroutine-using
+  test class sorts ahead of the setters, or an `AuthenticationDialog*` test gains an async path, the
+  val caches `true` and `testLoginErrorWithCauseRendersCauseMessage` (sees `"java.io.IOException: boom"`
+  instead of `"boom"`) and `testWrongPasswordErrorPathThrowsFromNullCause` (sees a non-null
+  `error.cause`, no NPE, `capturedCulprit` stays null) both fail. The *reasoning* for disabling
+  recovery is sound and equivalence-strengthening — it is `-ea`-gated, off on every real Android and
+  release build and on the RxJava path, so leaving it on makes the **test** diverge from production
+  rather than the production code diverging (code review Finding 3 assessed this correctly).
+- **Evidence:** `GpodderAuthenticationFragmentAsyncCharacterizationTest.kt:42`, `GpodderAuthenticationFragmentCancellationTest.kt:47` (setters); `SynchronizationPreferencesViewModelTest.kt` `@Before` (no setter); Implementation Notes "Deviations from plan" ("the three coroutine-using test classes … each sets it"); observed run order (test-result timestamps: `AuthenticationDialogCharacterizationTest` 10:01:55 → `GpodderAuthenticationFragmentAsyncCharacterizationTest` 10:02:00 → `Synchronization*` 10:02:06+).
+- **Suggested mitigation:** Set it once at the module test-task level — `tasks.withType(Test).configureEach { systemProperty 'kotlinx.coroutines.stacktrace.recovery', 'false' }` in `ui/preferences/build.gradle` — which removes the ordering dependency entirely. AC7 constrains added `implementation` *lines*, not a test-JVM system property, so the developer's stated reason for avoiding this ("could not be done via a Gradle test JVM arg without violating AC7") does not hold; if the planner disagrees, at minimum set the property in all three new classes' `@Before` and correct the deviation note.
+
+**Finding 3 — Site B (create-device) `CancellationException` rethrow is verified by inspection only**
+- **Severity:** MINOR
+- **Class:** coverage gap (`concurrency` track)
+- **Concern:** `GpodderAuthenticationFragmentCancellationTest` exercises Site A (login) only — plan Step
+  8 says so explicitly. Site B's converted `catch (error: CancellationException) { throw error }` ahead
+  of `catch (error: Throwable)` is a line-for-line mirror of Site A (confirmed in the diff), but nothing
+  executably pins that a create-device coroutine cancelled by `dismiss()` does not render the error
+  branch. Low risk given the symmetry; noted for completeness so it is a conscious acceptance.
+- **Evidence:** `GpodderAuthenticationFragment.kt` Site B `catch` block (post-diff); `GpodderAuthenticationFragmentCancellationTest.kt` (single test, Site A).
+- **Suggested mitigation:** None required. Optionally add a second test to the cancellation file mirroring the Site A scenario for `createDeviceButton`.
+
+**Finding 4 — `SyncSubtitle.Cleared` is dead / unreachable code**
+- **Severity:** MINOR (code hygiene, not equivalence)
+- **Class:** quality — also raised as code review Finding 2
+- **Concern:** No path produces `SyncSubtitle.Cleared`: `onStop()` sets `actionBar().subtitle = ""`
+  directly (correctly, to keep D7's cancel-then-clear ordering), so the `render()` branch
+  `SyncSubtitle.Cleared -> ""` is unreachable. `AGENTS.md` forbids dead code.
+- **Evidence:** `SynchronizationPreferencesViewModel.kt` `sealed interface SyncSubtitle` (`data object Cleared`); `SynchronizationPreferencesFragment.kt` `render()` `when` branch.
+- **Suggested mitigation:** Remove `data object Cleared` and its `render()` branch (the `when` stays exhaustive over the three remaining subtypes). Do **not** route `onStop` through state instead — that reorders cancel-vs-clear.
+
+**Finding 5 — `SyncServiceEventSubscriber` is `internal`; plan D5 specified `private`**
+- **Severity:** NIT
+- **Class:** convention — also raised as code review Finding 4
+- **Concern:** The nested subscriber has no consumer outside the enclosing ViewModel (AC22 tests assert
+  via `EventBus.hasSubscriberForEvent`, not on the type). `internal` widens visibility past what is
+  used and past the plan.
+- **Evidence:** `SynchronizationPreferencesViewModel.kt:22`.
+- **Suggested mitigation:** `private class SyncServiceEventSubscriber`.
+
+### Categories considered and cleared
+
+- **Characterization proves equivalence, not existence.** The six async tests assert real behavior —
+  `setCredentials`→`login`→`getDevices` call order, the `devices`-before-`username` write order (via
+  `beforeGetDevices`), rendered error text, `currentStep`, button/progress-bar visibility. Test 4
+  genuinely reaches the Gap-16 `error.cause!!` NPE; test 6 genuinely distinguishes Site A
+  (`error.cause!!.message`) from Site B (`error.message`) — the fake throws a cause-less
+  `GpodnetServiceException("nope")`, so Site B rendering "nope" is only possible if it does not use
+  Site A's handler. No assert-free invocations, no tautologies. Re-ran green.
+- **The one deliberate behavior change is genuinely proven.** `ManualDispatcher` (default
+  `isDispatchNeeded`, so `withContext` always enqueues) holds the coroutine at `queued() == 1` with
+  `fake.calls` empty; `dismiss()` drives the `DialogFragment` to `DESTROYED` and cancels
+  `lifecycleScope`; `runQueued()` resumes the `MODE_CANCELLABLE` continuation with `CancellationException`
+  instead of executing the io block, so the fake records nothing and `credentialsError.visibility ==
+  GONE` — the block never ran *and* the error branch did not render. The `credentialsError == GONE`
+  assertion is a real guard that `catch (CancellationException) { throw error }` precedes
+  `catch (Throwable)` (verified present at both sites). The Step-3 "before" record uses a non-auto
+  `TestScheduler` and is a positive executed record against byte-identical production source.
+- **`devices` race genuinely PRESERVED.** `devices = service!!.getDevices()` stays inside
+  `withContext(ioDispatcher)`, no `@Volatile` added (`grep -c` → 3, `devices` without it), same
+  structured-resume happens-before that `observeOn(mainThread())` provided for the success path; the
+  concurrent-read race for `isDeviceInList`/`setupDeviceView` is neither closed nor widened. `ui/preferences/README.md`
+  convention 5 unchanged.
+- **Per-post delivery — the divergences are bounded and recorded.** `StateFlow` conflation (D10 row e)
+  and `callbackFlow` `BUFFERED(64)` `trySend` overflow-drop (C9 addendum) are the only per-post
+  divergences; checked against the real `SyncService.doWork()` sequence (8 posts on a WorkManager
+  thread seconds apart) and `SynchronizationQueueImpl.kt:136` — the one realistic fast pair
+  (`sync_status_started` immediately followed by `sync_status_wait_for_downloads`) is named. Envelope
+  is honest. `SyncServiceEvent` confirmed still `class SyncServiceEvent(val messageResId: Int)` — plain
+  class, so consecutive same-`resId` posts are distinct instances and both delivered
+  (`testConsecutiveEventsWithSameMessageResIdAreBothDelivered` collects the stream into a list and
+  proves it — re-ran green).
+- **EventBus registration lifetime.** `callbackFlow { register … awaitClose { unregister } }.stateIn(viewModelScope,
+  WhileSubscribed(stopTimeoutMillis = 0, replayExpirationMillis = 0), null)` implemented as specified;
+  a separate `SyncServiceEventSubscriber` carries `@Subscribe(ThreadMode.POSTING, sticky = true)`;
+  collector `launch` at the former `register()` line in `onStart`, `syncStatusJob?.cancel()` at the
+  former `unregister()` line in `onStop`, `actionBar().subtitle = ""` after the cancel. AC22's two
+  tests (`testCollectorCancellationUnregistersFromEventBus` comparing against a *recorded*
+  pre-collection value; `testEventsPostedWhileNotCollectingAreSeenOnlyIfSticky` — non-sticky missed,
+  sticky replayed) re-ran green. The Step-5 `stateIn` start-up gate passed; fallback not taken.
+- **Gap 16 / OQ1.** Wrong-password path still crashes — `testWrongPasswordErrorPathThrowsFromNullCause`
+  re-ran green, `capturedCulprit is NullPointerException`. `error.cause!!.message` verbatim in the
+  converted `catch` (`grep -F` → 1 / 1 / 0). The `CompositeException` → bare-NPE channel change is
+  disclosed in D10 row (d) and accurate. Preserved, pinned, handed to Milestone 18 by name, escalated
+  to José as non-blocking OQ1 — unchanged and still correct.
+- **Public API / reflective construction.** `SynchronizationPreferencesFragment` still `public`,
+  no-arg, extends `AnimatedPreferenceFragment`; `GpodderAuthenticationFragment` still `open`, `TAG`
+  still `const val`. `SyncSettingsHarnessSmokeTest` (6) and `SyncSettingsScreenshotCaptureTest` (3)
+  green and unmodified. `:app:assembleDebug` and `:ui:preferences:ktlintCheck` green here;
+  `assemblePlayRelease` (R8) green per code review.
+- **Dependency surface.** Catalog +1 line (`androidx-lifecycle-runtime-ktx` on the existing
+  `lifecycle-runtime-compose` ref), build.gradle +2 `implementation` lines
+  (`lifecycle-runtime-ktx` + already-catalogued `lifecycle-viewmodel-ktx`, now required because
+  `stateIn(viewModelScope, …)` uses `viewModelScope`), nothing removed. Both provable no-ops on the
+  resolved 2.9.4 per AC6. No `kotlinx-coroutines-test` / Turbine / MockWebServer / `mockito-core`.
+- **Scope creep.** ViewModel deliberately narrowed to `SynchronizationPreferencesFragment` and to the
+  ActionBar + sync event only; the Gpodder wizard keeps `username`/`password`/`selectedDevice`/`devices`/`currentStep`
+  as fragment fields; `updateScreen()` stays in the fragment. Narrowing written into the future-work
+  file's Milestone 20 row. No MVVM architecture smuggled in under "equivalence."
+- **`!!` reduction.** `SynchronizationPreferencesFragment.kt` 30 → 22, slice 49 → 41, `supportActionBar`
+  grep → 1. Exactly the D12 number; nothing removed that D12 did not authorise.
+- **AC9 literal-vs-intent gap** (code review Finding 1): the six frozen `@Test` bodies are byte-identical
+  (`5392ca143..HEAD` diff reaches only imports, `@Before`/`@After`, one field, and the
+  `showLoginStep`/`clickLogin` helper seam-swap); `AC10`'s `--diff-filter=M` on `src/test/` is empty.
+  Substantive freeze intact.
+
+### Loop status
+Loop 1 of max 2 — **APPROVE**. Auto-chain proceeds to PR (José authorised auto-chain to PR, not merge).
+Findings 1–5 are MINOR/NIT and non-blocking; Finding 2 (ordering-fragile deviation) and Finding 4 (dead
+`Cleared`) are the two worth a code touch in PR polish, and Finding 1 warrants a device check before the
+PR is considered complete. No escalation to José required; OQ1 remains separately open for him as a
+non-blocking positioning question.
