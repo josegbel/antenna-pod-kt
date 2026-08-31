@@ -20,6 +20,7 @@ import io.reactivex.rxjava3.exceptions.CompositeException
 import io.reactivex.rxjava3.plugins.RxJavaPlugins
 import io.reactivex.rxjava3.schedulers.Schedulers
 import java.io.IOException
+import kotlinx.coroutines.Dispatchers
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -38,9 +39,11 @@ class GpodderAuthenticationFragmentAsyncCharacterizationTest {
     private lateinit var context: Context
 
     private var capturedCulprit: Throwable? = null
+    private var previousUncaughtHandler: Thread.UncaughtExceptionHandler? = null
 
     @Before
     fun setUp() {
+        System.setProperty("kotlinx.coroutines.stacktrace.recovery", "false")
         context = RuntimeEnvironment.getApplication()
         SynchronizationSettings.init(context)
         SynchronizationCredentials.init(context)
@@ -49,15 +52,11 @@ class GpodderAuthenticationFragmentAsyncCharacterizationTest {
         SynchronizationCredentials.setHosturl("https://gpodder.net")
 
         capturedCulprit = null
+        previousUncaughtHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { _, error -> capturedCulprit = unwrapCulprit(error) }
         RxJavaPlugins.setIoSchedulerHandler { Schedulers.trampoline() }
         RxAndroidPlugins.setMainThreadSchedulerHandler { Schedulers.trampoline() }
-        RxJavaPlugins.setErrorHandler { error ->
-            capturedCulprit = if (error is CompositeException) {
-                error.exceptions.firstOrNull { it is NullPointerException } ?: error
-            } else {
-                error
-            }
-        }
+        RxJavaPlugins.setErrorHandler { error -> capturedCulprit = unwrapCulprit(error) }
     }
 
     @After
@@ -65,6 +64,15 @@ class GpodderAuthenticationFragmentAsyncCharacterizationTest {
         SynchronizationQueue.instance = null
         RxJavaPlugins.reset()
         RxAndroidPlugins.reset()
+        Thread.setDefaultUncaughtExceptionHandler(previousUncaughtHandler)
+    }
+
+    private fun unwrapCulprit(error: Throwable): Throwable {
+        return if (error is CompositeException) {
+            error.exceptions.firstOrNull { it is NullPointerException } ?: error
+        } else {
+            error
+        }
     }
 
     private fun field(name: String) =
@@ -81,6 +89,7 @@ class GpodderAuthenticationFragmentAsyncCharacterizationTest {
         fragment.showNow(activity.supportFragmentManager, GpodderAuthenticationFragment.TAG)
         method("advance").invoke(fragment)
         field("service").set(fragment, service)
+        field("ioDispatcher").set(fragment, Dispatchers.Unconfined)
         return fragment
     }
 
@@ -88,8 +97,12 @@ class GpodderAuthenticationFragmentAsyncCharacterizationTest {
         val dialog = fragment.dialog!!
         dialog.findViewById<EditText>(R.id.etxtUsername).setText(username)
         dialog.findViewById<EditText>(R.id.etxtPassword).setText(password)
-        dialog.findViewById<Button>(R.id.butLogin).performClick()
-        shadowOf(Looper.getMainLooper()).idle()
+        try {
+            dialog.findViewById<Button>(R.id.butLogin).performClick()
+            shadowOf(Looper.getMainLooper()).idle()
+        } catch (error: Throwable) {
+            capturedCulprit = unwrapCulprit(error)
+        }
     }
 
     private fun showDeviceStep(service: FakeGpodnetService): GpodderAuthenticationFragment {

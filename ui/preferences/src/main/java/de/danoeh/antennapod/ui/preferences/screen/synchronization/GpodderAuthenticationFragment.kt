@@ -13,6 +13,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.ViewFlipper
 import androidx.fragment.app.DialogFragment
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import de.danoeh.antennapod.net.common.AntennapodHttpClient
@@ -25,11 +26,15 @@ import de.danoeh.antennapod.storage.preferences.SynchronizationSettings
 import de.danoeh.antennapod.ui.common.Keyboard
 import de.danoeh.antennapod.ui.preferences.R
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
-import io.reactivex.rxjava3.core.Completable
 import io.reactivex.rxjava3.core.Observable
 import io.reactivex.rxjava3.schedulers.Schedulers
 import java.util.Locale
 import java.util.regex.Pattern
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Guides the user through the authentication process.
@@ -51,6 +56,8 @@ open class GpodderAuthenticationFragment : DialogFragment() {
     @Volatile
     private var selectedDevice: GpodnetDevice? = null
     private var devices: List<GpodnetDevice>? = null
+
+    private var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 
     @SuppressLint("UseRequireInsteadOfGet")
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
@@ -118,25 +125,27 @@ open class GpodderAuthenticationFragment : DialogFragment() {
             txtvError.visibility = View.GONE
             Keyboard.hide(activity)
 
-            Completable.fromAction {
-                service!!.setCredentials(usernameStr, passwordStr)
-                service!!.login()
-                devices = service!!.getDevices()
-                this@GpodderAuthenticationFragment.username = usernameStr
-                this@GpodderAuthenticationFragment.password = passwordStr
-            }
-                .subscribeOn(Schedulers.io())
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe({
+            lifecycleScope.launch {
+                try {
+                    withContext(ioDispatcher) {
+                        service!!.setCredentials(usernameStr, passwordStr)
+                        service!!.login()
+                        devices = service!!.getDevices()
+                        this@GpodderAuthenticationFragment.username = usernameStr
+                        this@GpodderAuthenticationFragment.password = passwordStr
+                    }
                     login.isEnabled = true
                     progressBar.visibility = View.GONE
                     advance()
-                }, { error ->
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
                     login.isEnabled = true
                     progressBar.visibility = View.GONE
                     txtvError.text = error.cause!!.message
                     txtvError.visibility = View.VISIBLE
-                })
+                }
+            }
         }
     }
 
