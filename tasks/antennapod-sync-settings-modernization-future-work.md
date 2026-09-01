@@ -42,10 +42,10 @@ Milestone 15's outcome note above) exists specifically because `:storage:prefere
 milestone's ViewModel owns that state, the majority of these forced assertions have a real path to
 disappearing rather than merely being preserved. Do not treat "fewer `!!`" as an incidental style win
 when it happens; it is evidence the underlying architectural problem (not just the syntax) got fixed.
-**Gap 16, still open:** `error.getCause().getMessage()`'s converted form (`error.cause!!.message` in
-`GpodderAuthenticationFragment.kt`) is pinned only by a grep on the emitted expression shape, not by an
-executable test — reaching it needs either MockWebServer or the injectable `GpodnetService` this
-milestone's DI work produces anyway. Close it here if convenient, or explicitly hand it to Milestone 18.
+**Gap 16 — RESOLVED 2026-09-01 (fix-here, post-#32).** `error.getCause().getMessage()`'s converted form
+(`error.cause!!.message`) was preserved and pinned in the milestone proper, then fixed under OQ1 in a
+standalone follow-up PR: Site A of `GpodderAuthenticationFragment.kt` now reads
+`error.cause?.message ?: error.message`. No longer Milestone 18's.
 
 **Outcome (done, PR pending):** both RxJava call sites converted to `lifecycleScope.launch` +
 `withContext(ioDispatcher)`; the sticky `SyncServiceEvent` subscription replaced by a
@@ -53,9 +53,11 @@ milestone's DI work produces anyway. Close it here if convenient, or explicitly 
 scoped to `SynchronizationPreferencesFragment` only. Per-behavior preserve/fix: the two discarded
 `Disposable`s → **FIXED** (structurally forced by `lifecycleScope`); the `devices` race → **PRESERVED**
 (`@Volatile` count stays 3); sticky-replay → **PRESERVED** (`StateFlow<SyncServiceEvent?>(null)`); Gap 16 →
-**PRESERVED**, now pinned executably (`testWrongPasswordErrorPathThrowsFromNullCause`) and handed to
-Milestone 18 by name (below). Slice `!!` 49 → 41 (the five ActionBar statements collapsed to one
-`actionBar()` helper). `kotlinx-coroutines-test` deliberately not catalogued (see Milestone 18). The
+**PRESERVED in the milestone proper**, then **FIXED under OQ1 (2026-09-01, standalone follow-up PR after
+#32 merged)** — José chose fix-here; Site A now reads `error.cause?.message ?: error.message`, pinned by
+the inverted `testWrongPasswordErrorRendersServerMessageWithNoCause`. Slice `!!` 49 → 41 in the milestone,
+→ 40 after the Gap 16 fix (the five ActionBar statements collapsed to one `actionBar()` helper; the OQ1
+fix removed one more). `kotlinx-coroutines-test` deliberately not catalogued (see Milestone 18). The
 Gpodder wizard fields (`currentStep`/`devices`/`username`/`password`/`selectedDevice`) stayed on the
 fragment — six characterization tests reach them by reflected name — so the MVVM layer after this
 milestone covers **one of the slice's four files, and within it only the ActionBar and the sync event**,
@@ -65,16 +67,13 @@ not the screen body. What Milestone 20 still owns is spelled out in its section 
 Wire the ViewModel (from Milestone 17) and a sync-settings repository abstraction over `:storage:preferences`'s statics through Hilt (infra from Milestone 16), replacing `ClientConfigurator`'s static-init-plus-mutable-global-singleton pattern for this slice specifically. `SynchronizationQueue.instance` (a mutable public `var` global today) should be bound as a provided dependency rather than read from the global.
 
 **Inherited from Milestone 17, by name:**
-- **Gap 16 ships preserved and is Milestone 18's to fix.** `GpodderAuthenticationFragment.kt`'s login
-  error handler still reads `error.cause!!.message`, which NPEs and crashes the app on the most common
-  gpodder.net login failure (`GpodnetServiceAuthenticationException("Wrong username or password")` carries
-  no cause). Milestone 17 pinned it executably (`testWrongPasswordErrorPathThrowsFromNullCause`) and
-  deliberately did not fix it — a crash fix inside an equivalence-proving diff makes the proof unreadable.
-  The one-line fix is `error.cause?.message ?: error.message`; with Milestone 18's injected `GpodnetService`
-  it can be asserted through the real failure path rather than a reflected fake. When fixed: invert that
-  test to assert the rendered message, and update Milestone 15's `AC13` grep pin and
-  `ui/preferences/README.md` convention 4. José's OQ1 (ship it preserved for one more milestone vs fix now)
-  is still open and non-blocking.
+- **Gap 16 — NO LONGER Milestone 18's.** José resolved OQ1 fix-here on 2026-09-01: after PR #32 merged,
+  the one-line fix (`error.cause?.message ?: error.message` at Site A of `GpodderAuthenticationFragment.kt`;
+  the `createDevice` handler unchanged) shipped in a standalone follow-up bugfix PR on branch
+  `fix/gpodder-auth-causeless-exception-crash`, with `testWrongPasswordErrorPathThrowsFromNullCause`
+  inverted to `testWrongPasswordErrorRendersServerMessageWithNoCause`. `ui/preferences/README.md`
+  convention 4 was updated. Milestone 15's task file was not edited; the Milestone 17 OQ1-resolved note
+  flags that its `AC13` four-count grep pin is now stale for Site A.
 - **`kotlinx-coroutines-test` becomes genuinely necessary here.** Milestone 17 kept every coroutine
   single-threaded and testable without it. Once a `SynchronizationPreferencesViewModel` read becomes
   `suspend` behind an injected repository, `runTest`/`TestDispatcher` is the right tool — catalogue it as

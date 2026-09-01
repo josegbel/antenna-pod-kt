@@ -33,6 +33,12 @@ Conventions a future edit to this slice must preserve:
    throws, which is exactly the kind of change this rule exists to prevent. Where Android Lint's
    `UseRequireInsteadOfGet` check disagrees, the correct fix is `@SuppressLint("UseRequireInsteadOfGet")`
    at the point of use, not the "require" helper.
+   One exception: Gap 16 (`error.cause!!.message` on a causeless `GpodnetServiceAuthenticationException`
+   in `GpodderAuthenticationFragment`'s login error handler) was **fixed** in Milestone 17 under OQ1
+   (2026-09-01), not preserved — that `!!` was a faithfully-carried-over crash on the most common login
+   failure, and José approved fixing it as a standalone post-equivalence change. Site A now reads
+   `error.cause?.message ?: error.message`; the `createDevice` handler (Site B, `error.message`) is
+   unchanged.
 5. **Three known defects are pinned, not fixed:** `SynchronizationPreferencesFragment.getProviderSummary`/
    `getProviderIcon` NPE on an unrecognised persisted provider key (their `when` branches keep an `else ->`
    that is currently unreachable dead code, intentionally, for exactly this case); the `devices` field in
