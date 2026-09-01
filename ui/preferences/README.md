@@ -73,3 +73,26 @@ Conventions a future edit to this slice must preserve:
 12. **Coroutines dependencies (`kotlinx-coroutines-core`, `-android`) come from the shared `coroutines`
     version ref**, not an inline version — the same ref `kotlinx-coroutines-play-services` uses elsewhere in
     the catalog. Keep any future coroutines bump to the ref, so all consumers move together.
+13. **A `ViewModel` in this module exposes state as a `StateFlow` of an immutable `data class`, updated by
+    `copy()` — never `LiveData`, and never a mutable state object re-posted by reference.** `BugReportViewModel`
+    (Java, `MutableLiveData`, `setCrashLogState` mutating and re-posting the same instance) predates this rule
+    and is not the pattern to copy: a `StateFlow` re-posting an `equals`-identical reference emits nothing, so
+    the mutate-and-re-post shape silently stops updating collectors. New state-holder work follows
+    `SynchronizationPreferencesViewModel`.
+14. **`event/SyncServiceEvent.kt` must stay a plain `class`, never a `data class`.** `SynchronizationPreferencesViewModel`
+    bridges the sticky `SyncServiceEvent` bus into a `StateFlow`, which conflates emissions that are `equals()`
+    to the current value. As a plain class its equality is reference identity and every producer builds a fresh
+    instance, so two consecutive posts of the same `messageResId` are both delivered — matching EventBus. A
+    `data class` would give them structural equality and the second post would be dropped.
+15. **EventBus registration in this module is tied to flow collection, not to a `ViewModel`'s lifetime.** The
+    `SyncServiceEvent` bridge is a `callbackFlow { register … awaitClose { unregister } }.stateIn(viewModelScope,
+    SharingStarted.WhileSubscribed(0, 0), null)` — `stopTimeoutMillis` and `replayExpirationMillis` are both
+    `0` on purpose (no deferred unregistration, and a reset to the initial value when the last collector
+    stops). Registering in `init`/`onCleared` instead would keep mutating state for events delivered while the
+    screen is stopped, which the screen on `develop` never saw.
+16. **Deterministic coroutine tests in this module come from single-threadedness, not `kotlinx-coroutines-test`.**
+    `Dispatchers.Main.immediate` on Robolectric's main looper, `shadowOf(Looper.getMainLooper()).idle()` pumping,
+    a reflected `private var ioDispatcher` seam set to `Dispatchers.Unconfined`, and a hand-written file-private
+    `CoroutineDispatcher` that only runs queued blocks on an explicit call. No `runTest`, `TestDispatcher` or
+    `Dispatchers.setMain`. `kotlinx-coroutines-test` is expected to become necessary only when a `ViewModel`
+    read here becomes `suspend` behind an injected repository.

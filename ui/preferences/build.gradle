@@ -49,6 +49,8 @@ dependencies {
     implementation libs.androidx.work.runtime
     implementation libs.kotlinx.coroutines.core
     implementation libs.kotlinx.coroutines.android
+    implementation libs.androidx.lifecycle.runtime.ktx
+    implementation libs.androidx.lifecycle.viewmodel.ktx
     implementation platform(libs.androidx.compose.bom)
     implementation libs.androidx.compose.material3
     implementation libs.androidx.compose.foundation
@@ -71,4 +73,11 @@ dependencies {
     // :model is only ever an `implementation` dependency repo-wide (verified: never `api`), so
     // it is not on this module's test compile classpath transitively via :net:sync:service-interface.
     testImplementation project(':model')
+}
+
+tasks.withType(Test).configureEach {
+    // Gradle enables -ea, which turns on kotlinx-coroutines stack-trace recovery; that wraps thrown
+    // exceptions and shifts their cause chain. Real Android and release builds have it off. Disabling
+    // it here keeps the sync-settings coroutine characterization tests matching production behaviour.
+    systemProperty "kotlinx.coroutines.stacktrace.recovery", "false"
 }

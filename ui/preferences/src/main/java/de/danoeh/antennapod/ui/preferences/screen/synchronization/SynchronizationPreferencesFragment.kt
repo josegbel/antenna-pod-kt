@@ -13,6 +13,8 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.text.HtmlCompat
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
@@ -23,11 +25,16 @@ import de.danoeh.antennapod.storage.preferences.SynchronizationCredentials
 import de.danoeh.antennapod.storage.preferences.SynchronizationSettings
 import de.danoeh.antennapod.ui.preferences.R
 import de.danoeh.antennapod.ui.preferences.screen.AnimatedPreferenceFragment
-import org.greenrobot.eventbus.EventBus
-import org.greenrobot.eventbus.Subscribe
-import org.greenrobot.eventbus.ThreadMode
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
+
+    private val viewModel: SynchronizationPreferencesViewModel by lazy {
+        ViewModelProvider(this)[SynchronizationPreferencesViewModel::class.java]
+    }
+
+    private var syncStatusJob: Job? = null
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         addPreferencesFromResource(R.xml.preferences_synchronization)
@@ -35,38 +42,59 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
         updateScreen()
     }
 
-    @SuppressLint("UseRequireInsteadOfGet")
     override fun onStart() {
         super.onStart()
-        (activity as AppCompatActivity?)!!.supportActionBar!!.setTitle(R.string.synchronization_pref)
         updateScreen()
-        updateActionBar()
-        EventBus.getDefault().register(this)
+        viewModel.onStarted()
+        syncStatusJob = viewLifecycleOwner.lifecycleScope.launch {
+            launch { viewModel.uiState.collect { render(it) } }
+            launch {
+                viewModel.syncStatus.collect { event -> if (event != null) syncStatusChanged(event) }
+            }
+        }
     }
 
-    @SuppressLint("UseRequireInsteadOfGet")
     override fun onStop() {
         super.onStop()
-        EventBus.getDefault().unregister(this)
-        (activity as AppCompatActivity?)!!.supportActionBar!!.subtitle = ""
+        syncStatusJob?.cancel()
+        syncStatusJob = null
+        actionBar().subtitle = ""
     }
 
-    @Subscribe(threadMode = ThreadMode.MAIN, sticky = true)
-    @SuppressLint("UseRequireInsteadOfGet")
-    fun syncStatusChanged(event: SyncServiceEvent) {
+    private fun syncStatusChanged(event: SyncServiceEvent) {
         if (!SynchronizationSettings.isProviderConnected()) {
             return
         }
         updateScreen()
-        if (event.messageResId == R.string.sync_status_error ||
-            event.messageResId == R.string.sync_status_success
-        ) {
-            updateLastSyncReport(
-                SynchronizationSettings.isLastSyncSuccessful(),
-                SynchronizationSettings.getLastSyncAttempt()
+        viewModel.onSyncEvent(event)
+    }
+
+    @SuppressLint("UseRequireInsteadOfGet")
+    private fun actionBar() = (activity as AppCompatActivity?)!!.supportActionBar!!
+
+    private fun render(state: SyncSettingsUiState) {
+        val actionBar = actionBar()
+        actionBar.setTitle(state.titleRes)
+        actionBar.subtitle = when (val subtitle = state.subtitle) {
+            SyncSubtitle.Absent -> null
+            is SyncSubtitle.Message -> getString(subtitle.resId)
+            is SyncSubtitle.LastSyncReport -> String.format(
+                "%1\$s (%2\$s)",
+                getString(
+                    if (subtitle.successful) {
+                        R.string.gpodnetsync_pref_report_successful
+                    } else {
+                        R.string.gpodnetsync_pref_report_failed
+                    }
+                ),
+                DateUtils.getRelativeDateTimeString(
+                    context,
+                    subtitle.attemptedAt,
+                    DateUtils.MINUTE_IN_MILLIS,
+                    DateUtils.WEEK_IN_MILLIS,
+                    DateUtils.FORMAT_SHOW_TIME
+                )
             )
-        } else {
-            (activity as AppCompatActivity?)!!.supportActionBar!!.setSubtitle(event.messageResId)
         }
     }
 
@@ -103,7 +131,7 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
             Snackbar.make(view!!, R.string.pref_synchronization_logout_toast, Snackbar.LENGTH_LONG).show()
             SynchronizationSettings.setSelectedSyncProvider(null)
             updateScreen()
-            updateActionBar()
+            viewModel.onStarted()
             true
         }
     }
@@ -143,19 +171,6 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
             findPreference<Preference>(PREFERENCE_LOGOUT)!!.setSummary(formattedSummary)
         } else {
             findPreference<Preference>(PREFERENCE_LOGOUT)!!.setSummary(null)
-        }
-    }
-
-    @SuppressLint("UseRequireInsteadOfGet")
-    private fun updateActionBar() {
-        // Do not call from onCreate; ActionBar is not yet available at that point
-        if (SynchronizationSettings.isProviderConnected()) {
-            updateLastSyncReport(
-                SynchronizationSettings.isLastSyncSuccessful(),
-                SynchronizationSettings.getLastSyncAttempt()
-            )
-        } else {
-            (activity as AppCompatActivity?)!!.supportActionBar!!.subtitle = null
         }
     }
 
@@ -215,28 +230,6 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
 
     private val selectedSyncProviderKey: String?
         get() = SynchronizationSettings.getSelectedSyncProviderKey()
-
-    @SuppressLint("UseRequireInsteadOfGet")
-    private fun updateLastSyncReport(successful: Boolean, lastTime: Long) {
-        val status = String.format(
-            "%1\$s (%2\$s)",
-            getString(
-                if (successful) {
-                    R.string.gpodnetsync_pref_report_successful
-                } else {
-                    R.string.gpodnetsync_pref_report_failed
-                }
-            ),
-            DateUtils.getRelativeDateTimeString(
-                context,
-                lastTime,
-                DateUtils.MINUTE_IN_MILLIS,
-                DateUtils.WEEK_IN_MILLIS,
-                DateUtils.FORMAT_SHOW_TIME
-            )
-        )
-        (activity as AppCompatActivity?)!!.supportActionBar!!.subtitle = status
-    }
 
     @StringRes
     private fun getProviderSummary(provider: SynchronizationProvider): Int {

@@ -1,0 +1,147 @@
+# Checkpoint — antennapod-sync-settings-concurrency-mvvm-milestone-17
+
+> **Repo:** `antennapod`
+> **Task file:** `tasks/antennapod-sync-settings-concurrency-mvvm-milestone-17.md`
+> **Depends on:** Milestone 16 (`di`+`compose`+`concurrency` prerequisites, PR #31, **merged into `develop` at `8e4c292174897b75d7b9e1609c595717953a004e`, 2026-08-28**). Milestone 15 (`kotlin`, PR #21, `f5d4c5551`) and Milestone 15b (before-screenshot, PR #22, `45904a410`) are both merged and ancestors of that commit. Branch is cut fresh from `origin/develop`.
+
+## Status
+**PR OPENED — [PR #32](https://github.com/josegbel/antenna-pod-kt/pull/32) (2026-08-31), `concurrency/sync-settings-milestone-17` → `develop`, 9 commits off `origin/develop` `8e4c29217`. Auto-chain complete; the pipeline ends here — merge is José's call, and OQ1 (ship Gap 16 as a preserved, now-pinned wrong-password crash for one more milestone, or fix it now) is the open decision for him before/at merge.** Post-review cleanup pass (commit 9) addressed all five review findings that warranted a code touch: (1) removed dead `SyncSubtitle.Cleared` + its `render()` branch; (2) moved the kotlinx `stacktrace.recovery=false` disable out of two test `@Before`s into a module-level `ui/preferences/build.gradle` `tasks.withType(Test) { systemProperty … }` — deterministic for every test class, and the deviation note in Implementation Notes is corrected; (3) confirmed by test run that `SyncServiceEventSubscriber` must be `internal` (a `private` nested class fails every ViewModel test with `IllegalAccessException` from EventBus reflection) — recorded; (4) added a conscious AC9 helper-scope acknowledgement to Implementation Notes; (5) ran the device check — `:app:installPlayDebug` on an API-36 emulator, navigated to Sync Settings: ActionBar renders "Synchronization", no subtitle (disconnected → `Absent` → null), survives an onStop/onStart cycle, **0 FATAL/AndroidRuntime log lines**. Re-verified: both flavoured test tasks 55/55/0/0/0, ktlint + checkstyle + lint + `:app:assembleDebug` green, `libs.versions.toml` still +1 line. Two deviations now recorded in Implementation Notes (dead-code removal; the module-level test property), both non-behavioral, no planner re-approval required. **PR NOT opened — José does that.**
+
+Previously: **red-team implementation review Loop 1 = APPROVE (2026-08-31).** 8 commits on `concurrency/sync-settings-milestone-17` off `origin/develop` `8e4c29217`. Red-team independently re-verified: suite 55/55 both flavours twice from `--rerun-tasks` (0/0/0), 8 pre-existing classes row-for-row unchanged; the six async `@Test` bodies not present in the `5392ca143..HEAD` diff at all; cancellation paired-file artifact genuine (`ManualDispatcher` holds the coroutine, `dismiss()` cancels `lifecycleScope`, io block never runs, `credentialsError == GONE` guards the `CancellationException` rethrow); `devices` race genuinely preserved (write in `withContext(ioDispatcher)`, no `@Volatile`, count 3); Gap 16 wrong-password NPE still crashes (`testWrongPasswordErrorPathThrowsFromNullCause` green, bare-NPE channel disclosed); `callbackFlow`/`stateIn(WhileSubscribed(0,0))` registration tied to collection, AC22 both tests green; conflation + buffer-drop the only per-post divergences, envelope honest; scope clean (9 code/build + 4 doc, `net/`/`event/`/`bugreport/` untouched, no Hilt/KSP/Compose); `!!` 22/12/7/0=41; `:app:assembleDebug` + ktlint green here. **Verdict block `## Red-Team Verdict — Implementation` appended to the task file after the Code Review verdict.** Five findings, all MINOR/NIT, none blocking: (1) ActionBar render timing shifts synchronous→collector-driven — 1-frame on-device window uncovered by tests, device check recommended before PR is "done"; (2) `stacktrace.recovery=false` deviation relies on an unstated test-class-ordering invariant and the deviation note misstates which classes set it — recommend a module-level `test { systemProperty … }`; (3) Site B `CancellationException` rethrow verified by inspection only; (4) `SyncSubtitle.Cleared` dead code (= code review Finding 2); (5) `SyncServiceEventSubscriber` `internal` vs plan's `private` (= code review Finding 4). Findings 2 and 4 worth a code touch in PR polish. PR NOT opened.
+
+Previously: **implementation complete (2026-08-31). All 8 commits.** Steps 1–10 in order; suite 41 → 55; slice `!!` 49 → 41; one catalog line + two `implementation` lines; four created test files, none of the eleven pre-existing touched. One deviation recorded in Implementation Notes (kotlinx stack-trace recovery disabled in two test `@Before`s — `-ea`-only artifact).
+
+Previously: **plan red-team Loop 2 = APPROVE (2026-08-31). Plan is FINAL. Next agent: `android-migration-developer`.** Scaffolded 2026-08-28; Research populated 2026-08-28; Plan populated 2026-08-28; plan red-team Loop 1 = CHALLENGE 2026-08-28 (2 MAJOR, 4 MINOR); plan Revision 1 completed 2026-08-31 (C1–C6 addressed, edits marked `[R1]`); **plan red-team Loop 2 = APPROVE 2026-08-31** — both MAJOR concerns (C1, C2) verified closed by real design changes, C3–C6 folded in, counts consistent; three MINOR concerns (C7 AC9-vs-CompositeException-channel for the wrong-password test, C8 sticky-event hygiene in the new ViewModel test class, C9 `callbackFlow` buffer-overflow drop) handed to the developer as implementation notes, no further planner loop needed. No escalation to José required; OQ1 (ship Gap 16 preserved) remains separately open for him as non-blocking. Auto-chain authorized by José in-session 2026-08-28 for this milestone specifically: run Research → Plan → red-team plan (max 2 loops) → Implement → Code review (max 3 loops) → red-team implementation → PR opened, no pause for confirmation between stages. Authorization is scoped to opening a PR, not merging.
+
+## Last updated
+2026-08-31 (`android-migration-developer`, **post-review cleanup pass — commit 9**. Removed dead `SyncSubtitle.Cleared`; moved `stacktrace.recovery=false` to a module-level `ui/preferences/build.gradle` test `systemProperty` (deleting the two `System.setProperty` lines) and corrected the deviation note; confirmed `internal` `SyncServiceEventSubscriber` is required for EventBus reflection via a `private`-fails-every-test run; added the AC9 helper-scope acknowledgement; ran the on-emulator device check (Sync Settings renders, 0 crash log lines). Re-verified both flavoured test tasks 55/55, ktlint/checkstyle/lint/`:app:assembleDebug` green. Next: José opens the PR.)
+
+Previously: 2026-08-31 (`legacy-android-red-team`, **implementation review Loop 1: APPROVE**. Verdict block `## Red-Team Verdict — Implementation` appended to the task file after `## Code Review Verdict — Loop 1`. No CRITICAL/MAJOR; five MINOR/NIT findings, none blocking. Independently re-ran both flavoured `:ui:preferences` test tasks twice from `--rerun-tasks` (55/55, 0/0/0, pre-existing 8 classes unchanged), `:app:assembleDebug`, `:ui:preferences:ktlintCheck` — all green; verified the six async `@Test` bodies absent from the `5392ca143..HEAD` diff, the cancellation paired-file artifact, the D10 five-row table, `!!`/`@Volatile`/`supportActionBar`/AC14 counts, and dependency-surface deltas. Next: open the PR — José authorised auto-chain to PR, not merge.)
+
+Previously: 2026-08-31 (`migration-code-reviewer`, **code review Loop 1: APPROVE**. Verdict block `## Code Review Verdict — Loop 1` appended to the task file after the two plan red-team verdict blocks, before Implementation Notes. No CRITICAL/MAJOR; four MINOR/NIT findings, none blocking. Independently re-ran the play unit tests (`--rerun-tasks`, 55/55), `:app:assembleDebug`, `:app:assemblePlayRelease`, ktlint, lint, checkstyle — all green. Next: `legacy-android-red-team` implementation review.)
+
+Previously: 2026-08-31 (`android-migration-developer`, **implementation complete** — Steps 1–10, eight commits on `concurrency/sync-settings-milestone-17` off `origin/develop` at `8e4c29217`. Final suite 55/55 both flavours; every acceptance criterion's command run and pasted into the task file's Implementation Notes. One deviation recorded there. PR not opened.)
+
+Previously: 2026-08-31 (`legacy-android-red-team`, **plan review Loop 2: APPROVE**. Verdict block `## Red-Team Verdict — Plan (Loop 2)` appended to the task file after the Loop 1 block. C1 closed: `ManualDispatcher` verified deterministic and able to hold the coroutine mid-`withContext` (checked against `MODE_CANCELLABLE` dispatch semantics), separate `GpodderAuthenticationFragmentCancellationTest.kt` resolves the AC9 contradiction, Rx `TestScheduler` before-record sound, paired-file diff honestly replaces the unfalsifiable red→green claim. C2 closed: `callbackFlow`+`stateIn(WhileSubscribed(0,0), null)` correctly reproduces per-`onStart`/`onStop` registration, `stopTimeoutMillis=0`/`replayExpirationMillis=0` reasoning correct, AC22 is an adequate executable pin, `startObserving`/`stopObserving` fallback genuinely preserves the fix. C3–C6 genuinely folded in. Counts checked consistent (41→55, 15 written/14 final, Step 7 flat, four created test files, two `implementation` lines). Source spot-checks: `SyncServiceEvent` plain class confirmed, `service` field nullable/injectable confirms D14 seam. Previous entry, 2026-08-31, `legacy-android-planner`, **Revision 1 complete**. New **D15** specifies the cancellation-proof harness — separate file `GpodderAuthenticationFragmentCancellationTest.kt`, hand-written file-private `ManualDispatcher`, Rx `TestScheduler` for the Step-3 "before" record, paired-file diff as the artifact. Steps 2–8 rewritten to match; File Scope now four created test files and two `implementation` lines; AC9 narrowed to the six Step-3 bodies; AC12 row (a) re-based on the paired diff; **new AC22** makes C2/C6 executable; suite target **41 → 55**; criteria count **21 → 22**. `kotlinx-coroutines-test` still NOT catalogued — D9 was not reopened. Previous entry, 2026-08-28, `legacy-android-red-team` plan review Loop 1: **CHALLENGE**. C1 MAJOR — cancellation test violated AC9, had no deterministic mechanism under D9's Unconfined seam, and its "fails on old code" claim was not executable. C2 MAJOR — D5's ViewModel-lifetime EventBus registration diverged for stopped-state events. C3–C6 MINOR — D6 pin needs a stream collector; StateFlow-conflation unrecorded; D3 "M20 prerequisite satisfied" overstated; frozen-test EventBus pollution. D7/D10b/D10d/D11/D12/D13/D2/D8/File Scope considered and cleared. Full verdict block in task file.)
+
+## Lifecycle progress
+- [x] Research (legacy-android-researcher)
+- [x] Plan (legacy-android-planner) — **Revision 1 complete 2026-08-31** (C1–C6 addressed; D15 added; 22 criteria)
+- [x] Red-team plan (legacy-android-red-team) — max 2 loops — Loop 1: CHALLENGE (2026-08-28); Revision 1 done 2026-08-31; **Loop 2: APPROVE (2026-08-31)** — plan is final; C7–C9 MINOR handed to developer
+- [x] Implement (android-migration-developer) — **complete 2026-08-31**, 8 commits, suite 41 → 55
+- [x] Code review (migration-code-reviewer) — max 3 loops — **Loop 1: APPROVE (2026-08-31)**, 4 MINOR/NIT findings, none blocking
+- [x] Red-team implementation (legacy-android-red-team) — max 2 loops — **Loop 1: APPROVE (2026-08-31)**, 5 MINOR/NIT findings, none blocking
+- [x] PR opened — **[PR #32](https://github.com/josegbel/antenna-pod-kt/pull/32) (2026-08-31)**
+
+## Decisions for next session
+- **Auto-chain authorized 2026-08-28** for this milestone — do not pause between pipeline stages; end at PR opened, merge stays with José.
+- **DI is Milestone 18, not this one.** ViewModel stands up as a plain `ViewModel` with a hand-written factory (the `BugReportViewModel` shape), NOT `@HiltViewModel`. Do not pull Hilt into File Scope.
+- **Per-behavior preserve-or-fix decisions are mandatory** for: the two discarded RxJava `Disposable`s (fix is structurally forced by `viewModelScope`), the `SyncServiceEvent` sticky-replay semantics (must be `StateFlow`/`SharedFlow(replay=1)`), the `devices` data race. Repo convention is pin-and-track, not drive-by-fix — deviations must be recorded and justified.
+- **`:net:sync:service` is out of the Milestone 15 slice and not yet surveyed** — Research must check what posts/removes `SyncServiceEvent` stickily before the Flow shape is finalized.
+- **Gap 16** (`error.cause!!.message`, grep-pinned only): close here if convenient, else explicitly hand to Milestone 18.
+- Milestone 15's characterization suite (11 files / 8 classes / 41 tests on `develop` — re-measure at Step 1) is the regression net and must stay green throughout, not be rewritten alongside the change.
+
+## Research outcome (2026-08-28) — corrections the plan must absorb
+
+Four pre-research assumptions were falsified or materially sharpened. Full detail in the task file's Research section.
+
+- **`BugReportViewModel` is a weaker precedent than assumed.** It is **Java**, `AndroidViewModel` + `MutableLiveData`, driven by **RxJava** (not coroutines), acquired via `new ViewModelProvider(this).get(...)` with the **default** factory — **no hand-written factory exists in `:ui:preferences`** — and it has **zero tests**. The only Coroutines/StateFlow ViewModel precedent in the repo is in `app-wearos`, also untested.
+- **The async surface this milestone converts has ZERO executable test coverage.** No test in `screen/synchronization/` references `Completable`, `Observable`, `Schedulers`, or `Rx`. New characterization tests for the two subscriptions must be an early plan step, explicitly framed as new coverage rather than a rewrite of the frozen 41.
+- **Gap 16 is a reachable main-thread crash, not just an unpinned expression.** `GpodnetServiceAuthenticationException("Wrong username or password")` (`GpodnetService.java:368`) is built with a message and **no cause**, so `error.cause!!.message` NPEs inside the RxJava `onError` consumer → app crash on a wrong password. Preserve-or-fix now needs an argued decision, not a default.
+- **`SyncServiceEvent` is posted stickily at 9 sites and removed at ZERO** in production code (8 in `SyncService.doWork()` on a WorkManager thread, 1 conditional in `SynchronizationQueueImpl`). A `MutableStateFlow<SyncServiceEvent?>(null)` reproduces this exactly and needs no clear path.
+- **Toolchain gaps Milestone 16 did not cover:** `kotlinx-coroutines-test` is **not catalogued** (no `runTest`/`TestDispatcher`); `lifecycle-runtime-ktx` is **not catalogued**; `lifecycle-viewmodel-ktx` is catalogued but wired only into `app-wearos` and reaches `:ui:preferences` **transitively only**. No Turbine, no MockWebServer.
+- **Biggest structural tension:** 6 of the 9 `GpodderAuthenticationFragmentCharacterizationTest` tests manipulate `devices`/`username`/`password`/`selectedDevice`/`currentStep` **by reflected field name**. Moving those fields into a ViewModel breaks them at `getDeclaredField`, not at an assertion — colliding head-on with "do not rewrite the regression net while it is proving equivalence."
+- **Confirmed unchanged:** `8e4c29217` is an ancestor of `origin/develop`; `git diff HEAD origin/develop` is empty; suite re-measured at exactly **11 files / 8 classes / 41 `@Test`**; `!!` inventory re-measured at exactly **49** (30 / 12 / 7 / 0).
+
+## Plan outcome (2026-08-28) — what the red-team is reviewing
+
+14 Resolved Decisions (D1–D14) close all 10 Research unknowns; four are new (D1 branch/baseline, D2 ViewModel shape, D7 subscription ordering, D14 test-double strategy). Two corrections to Research recorded (D2, D6). Full detail in the task file's Plan section.
+
+- **D3 is the central decision: the ViewModel is scoped to `SynchronizationPreferencesFragment` only.** `GpodderAuthenticationFragment` keeps all five wizard fields and converts its two subscriptions to `lifecycleScope` in place, so the 6 reflection-driven tests never reach `getDeclaredField` on a moved field and the 41-test net stays **byte-identical**. The narrowing is disclosed: after this milestone the MVVM layer covers 1 of the slice's 4 files. Milestone 20's dialog-Compose question is where a wizard ViewModel would be scoped.
+- **D2 corrects the pre-research instruction:** plain `ViewModel` (not `AndroidViewModel`), **no hand-written factory** (no dependencies to inject — D4), `StateFlow` + immutable `data class` state. Deliberate divergence from `BugReportViewModel`'s LiveData + mutable state, which is actively broken under `StateFlow`.
+- **D5/D6:** local EventBus→`MutableStateFlow<SyncServiceEvent?>(null)` bridge inside the ViewModel; `:net:sync:service`'s 9 producers untouched. Planning finding: `SyncServiceEvent` is a **plain class, not a `data class`**, so StateFlow conflation cannot drop consecutive same-resId posts — pinned by a new test.
+- **D7:** `repeatOnLifecycle` **rejected**; an explicit `Job` starts/cancels at the exact source positions `register()`/`unregister()` occupy, preserving both load-bearing orderings.
+- **D9:** `kotlinx-coroutines-test` **not** catalogued. Determinism from a reflected `private var ioDispatcher` seam + existing Robolectric `idle()`. Only one new catalog line ships (D8: `androidx-lifecycle-runtime-ktx`).
+- **D11 / OQ1:** Gap 16 **preserved, pinned executably for the first time, handed to Milestone 18** — and raised to José, because shipping a known crash is a positioning call.
+- **D12:** `!!` target committed as a number — `SynchronizationPreferencesFragment.kt` 30 → **22** (one `actionBar()` access site), slice **49 → 41**.
+- **Steps:** 10 steps / 8 commits. Step 3 writes 6 async characterization tests **against the unmodified RxJava code** before any conversion; **AC9** requires the later `git diff` of that file to touch only imports and `@Before`/`@After` — zero assertion lines. Suite 41 → 54. *(Superseded by Revision 1 — see below: Step 3 now writes 7 tests across 2 files and the suite target is 55.)*
+
+## Plan Revision 1 outcome (2026-08-31) — what red-team Loop 2 is reviewing
+
+**15 Resolved Decisions (D1–D15).** D15 is new; D2/D5/D6/D7/D8/D9/D10/D14 were revised; D3's Milestone-20 framing was scoped. All edits carry `[R1]` markers, and `## Plan — Revision 1` (immediately before the verdict block in the task file) maps each of C1–C6 to what moved and why.
+
+- **C1 closed by the red-team's options (ii)+(iii)+(iv), NOT (i).** `kotlinx-coroutines-test` is still **not** catalogued and **D9 was not reopened**. New **D15**: the cancellation proof moves to its own File-Scope file `GpodderAuthenticationFragmentCancellationTest.kt`; determinism comes from a hand-written file-private ~8-line `ManualDispatcher` (queues `Runnable`s, drains only on `runQueued()`, no thread/executor/latch) and, for the Step-3 "before" record, RxJava's `TestScheduler` from the already-declared core artifact. **AC9** narrowed to freeze only the six Step-3 test bodies. **AC12 row (a)** drops the unfalsifiable "confirmed to fail on pre-Step-7 code" — the Step-7 test cannot compile against pre-Step-7 code — and is re-based on a **paired-file diff**: Step-3 green run of `testInFlightLoginSurvivesDialogDismissal` against byte-identical production source, plus the Step-7 diff deleting it and adding its green opposite.
+- **C2 adopted in full.** D5's `init`→`onCleared` registration withdrawn; `callbackFlow { register … awaitClose { unregister } }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(0, 0), null)` adopted, with `stopTimeoutMillis = 0` and `replayExpirationMillis = 0` both called out as load-bearing. Because lifetime-registration was **not** kept, the executable test is still added: **new AC22** + two Step-4 tests (`testCollectorCancellationUnregistersFromEventBus`, `testEventsPostedWhileNotCollectingAreSeenOnlyIfSticky` — the sticky/non-sticky stopped-then-restarted pair). Step 5 gains a `stateIn` start-up-timing **verification gate** on the four frozen lifecycle tests, with a pre-authorised `startObserving()`/`stopObserving()` fallback that must be recorded with failing output if taken.
+- **C3/C4/C5/C6 folded in.** Stream-collector mechanism specified and the test renamed `…AreBothDelivered` (C3); StateFlow-conflation recorded as **D10 row (e)** and AC12 is now a five-row table (C4); D3 reason 2 rewritten — M20 still owns hoisting `updateScreen()` state (C5); EventBus accumulation analysed and shown pre-existing and unchanged in count (C6).
+- **Counts, all re-derived and made consistent:** suite **41 → 55** (48 after Step 3, 53 after Step 4, 55 after Step 6; **Step 7 is flat** — before-record deleted, after-test added). **15** test methods written, **14** in the final suite, across 3 new classes (Async 6 / Cancellation 1 / ViewModel 7). File Scope: **four** created test files (was three), **two** `implementation` lines + **one** catalog line (was one/one). **22** acceptance criteria (was 21). Steps preamble corrected to **eight** commits, matching the Milestone section.
+- **Unchanged and still open:** OQ1 (Gap 16 ships preserved and pinned — José's call), OQ2, OQ3. D3's central narrowing (ViewModel scoped to `SynchronizationPreferencesFragment`; the 41-test net stays byte-identical) is untouched.
+
+## Resume command
+
+**PIPELINE COMPLETE — [PR #32](https://github.com/josegbel/antenna-pod-kt/pull/32) opened 2026-08-31**
+(`concurrency/sync-settings-milestone-17` → `develop`, 9 commits off `origin/develop` `8e4c29217`). The
+full spec workflow — Research → Plan (+ Revision 1) → red-team plan (Loop 1 CHALLENGE, Loop 2 APPROVE) →
+Implement (8 commits) → code review (APPROVE) → red-team implementation (APPROVE) → post-review cleanup
+(commit 9) → PR — ran end to end under the 2026-08-28 auto-chain authorization, which is scoped to
+opening the PR and **not** to merging.
+
+**Open for José, before/at merge:**
+- **OQ1 (non-blocking, one decision):** ship Gap 16 as a preserved-and-now-pinned wrong-password crash
+  for one more milestone (plan recommendation; fix verified end-to-end in Milestone 18 behind the DI
+  seam), or fix it now as its own commit after Step 8. The exact change set for "fix now" is enumerated
+  in the task file's Plan → OQ1. Relevant because the sequence may be offered upstream (OQ3) and "found a
+  reachable crash on the most common failure path, shipped it unfixed" reads differently in a public
+  case study — a public-claims call the root `CLAUDE.md` reserves for José.
+- **OQ2 / OQ3:** unchanged, non-blocking (catalog ref rename; upstreaming intent).
+
+**Next milestone: 18 (`di` wiring)** — inherits, by name and with the fix, from this milestone's Step 10
+future-work update: Gap 16's one-liner + its end-to-end test, the `kotlinx-coroutines-test` catalog
+bill, and the five deferred `SynchronizationQueue.instance!!` sites. Scaffold with `spec-task` before
+invoking `legacy-android-researcher`.
+
+The post-review cleanup pass (commit 9, `## Implementation Notes` → "Cleanup pass (post-review)") closed
+the code-touch findings: (1) AC9 helper-scope — documented; (2) `stacktrace.recovery=false` moved to a
+module-level `ui/preferences/build.gradle` test `systemProperty`, deviation note corrected; (3) Site B
+`CancellationException` rethrow — kept as inspection + the shared shape with Site A (Site A is pinned by
+`testInFlightLoginIsCancelledWhenDialogIsDismissed`); (4) `SyncSubtitle.Cleared` deleted; (5)
+`SyncServiceEventSubscriber` stays `internal` — `private` proven to break EventBus reflection by test run,
+recorded. Device check (red-team Finding 1): ran on an API-36 emulator, Sync Settings renders correctly,
+0 crash log lines — result in Implementation Notes. Nothing left for the PR author to fix; the PR body
+just needs writing and opening.
+
+**Historical: `legacy-android-red-team` (implementation review).** Loop 1 = APPROVE 2026-08-31. The
+focus areas it pressure-tested (stacktrace-recovery deviation, wrong-password bare-NPE, StateFlow
+conflation vs per-post delivery, `callbackFlow`/`stateIn` registration lifetime vs `onStart`/`onStop`)
+all cleared; the deviation surfaced a test-class-ordering fragility recorded as Finding 2.
+
+**Historical: `migration-code-reviewer` (review the implementation against the Plan).** Loop 1 =
+APPROVE 2026-08-31. Findings: (1) AC9 literal scope exceeded by in-scope helper seam-swap — substantive
+freeze intact; (2) `SyncSubtitle.Cleared` dead code — worth a code touch in PR polish; (3)
+stack-trace-recovery deviation assessed sound; (4) `SyncServiceEventSubscriber` `internal` vs plan's
+`private`.
+
+**Historical: `android-migration-developer` (implement the Plan).**
+
+> Plan red-team **Loop 2 = APPROVE (2026-08-31)** — the Plan is final. Invoke `android-migration-developer` on `tasks/antennapod-sync-settings-concurrency-mvvm-milestone-17.md`. Work strictly within File Scope; Step 3 (characterization tests against unmodified RxJava code) is non-negotiable and precedes every production-source change. Fold the three MINOR red-team concerns into implementation:
+> - **C7** — `testWrongPasswordErrorPathThrowsFromNullCause` (one of the six AC9-frozen bodies): put the throwable capture + normalization in `@Before`/`@After` (Step 3 unwraps the RxJava `CompositeException` to the contained NPE; Step 7 stores the propagated bare NPE directly) so the body assertion stays byte-identical despite the disclosed exception-channel change.
+> - **C8** — `SynchronizationPreferencesViewModelTest` must clear `SyncServiceEvent` stickies in `@Before` and `@After` (mirror `SynchronizationPreferencesFragmentLifecycleTest.kt:39,45`), or AC22 part (a) is non-deterministic.
+> - **C9** — extend D10 row (e) in Implementation Notes to note that `trySend` on a full `callbackFlow` buffer also drops (same negligible envelope as conflation), or set an explicit channel capacity/overflow policy.
+>
+> After code review (max 3 loops) → `legacy-android-red-team` implementation review → open the PR. Update this checkpoint at each transition.
+>
+> **Historical (Loop 2 review notes):**
+> What to read first, in order: the **Revision 1 marker** at the top of the Plan; **`## Plan — Revision 1`** (immediately before the verdict block), which maps C1–C6 to what moved; then **D15** (new), **D5** (rewritten), **AC9**, **AC12 row (a)** and **AC22** (new). Every Revision 1 edit is marked `[R1]` inline.
+>
+> Deliberate non-adoptions to weigh rather than assume were missed:
+> - **`kotlinx-coroutines-test` is still not catalogued** — C1's option (i) was declined on purpose and D9 is not reopened; determinism is argued from single-threadedness (`ManualDispatcher`, Rx `TestScheduler`, Robolectric `idle()`), all dependency-free.
+> - **`ManualDispatcher` is a file-private class inside the cancellation test file**, not a fifth created file — AC10 asserts exactly four created test files.
+> - **No single test goes red→green for the cancellation change**, and the plan says so explicitly: the artifact is the Step-3 green before-record plus the Step-7 paired-file diff.
+> - **`stateIn` start-up timing is a Step-5 gate with a pre-authorised fallback**, not a claim — if `testStickyEventReplaysOnStart` goes red, the `startObserving()`/`stopObserving()` shape ships instead, inside the same File Scope and the same criteria.
+>
+> **Loop 1's original must-fix list, for reference:**
+> - **C1** — `testInFlightLoginIsCancelledWhenDialogIsDismissed` as specified breaks AC9 (net-new asserting test in the file AC9 freezes), has no deterministic mechanism under D9's `Dispatchers.Unconfined` seam (coroutine runs to completion synchronously — no in-flight window), and "confirmed to fail on pre-Step-7 code" is not executable. Choose: catalogue `kotlinx-coroutines-test` (reopen D9), or move the cancellation proof to a separate new File-Scope test file with a described concurrent harness; reword AC9 to freeze only the six Step-3 test bodies; specify the fail-on-old-code check.
+> - **C2** — D5's ViewModel-lifetime EventBus registration is not equivalence-preserving for events delivered while the fragment is stopped (non-sticky divergence; frozen suite already posts non-sticky at `SynchronizationPreferencesFragmentLifecycleTest.kt:81,97,102`). Adopt `callbackFlow { register … awaitClose { unregister } }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(…), null)` (ties registration to collection = to fragment start/stop, and aligns with D7 ordering + the `app-wearos/MainViewModel` precedent D2 claims to follow), or justify lifetime-registration explicitly and add an executable stopped-then-restarted test.
+> - Fold in **C3** (D6 pin needs a stream collector, contradicts D9's ".value only" claim), **C4** (record the StateFlow-conflation vs EventBus per-post non-equivalence in Implementation Notes), **C5** (scope D3's "M20 prerequisite satisfied" claim — `updateScreen()` state hoisting is still M20's), **C6** (verify no cross-test EventBus pollution given `onCleared()` never runs under Robolectric).
+> - D7, D10b, D10d/D11, D12, D13, D2, D8 and File Scope were considered and cleared — no changes needed there.
+
+**After red-team approval (Loop 2):** auto-chain to `android-migration-developer`, then `migration-code-reviewer` (max 3 loops), then `legacy-android-red-team` (implementation review), then open the PR. Update this checkpoint at each stage transition.
