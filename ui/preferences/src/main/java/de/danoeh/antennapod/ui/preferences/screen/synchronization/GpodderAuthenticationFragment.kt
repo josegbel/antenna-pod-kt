@@ -139,7 +139,7 @@ open class GpodderAuthenticationFragment : DialogFragment() {
                 } catch (error: Throwable) {
                     login.isEnabled = true
                     progressBar.visibility = View.GONE
-                    txtvError.text = error.cause!!.message
+                    txtvError.text = error.cause?.message ?: error.message
                     txtvError.visibility = View.VISIBLE
                 }
             }

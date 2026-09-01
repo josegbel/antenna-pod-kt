@@ -34,9 +34,6 @@ class GpodderAuthenticationFragmentAsyncCharacterizationTest {
 
     private lateinit var context: Context
 
-    private var capturedCulprit: Throwable? = null
-    private var previousUncaughtHandler: Thread.UncaughtExceptionHandler? = null
-
     @Before
     fun setUp() {
         context = RuntimeEnvironment.getApplication()
@@ -45,16 +42,11 @@ class GpodderAuthenticationFragmentAsyncCharacterizationTest {
         UserPreferences.init(context)
         SynchronizationQueue.instance = RecordingSynchronizationQueue()
         SynchronizationCredentials.setHosturl("https://gpodder.net")
-
-        capturedCulprit = null
-        previousUncaughtHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { _, error -> capturedCulprit = error }
     }
 
     @After
     fun tearDown() {
         SynchronizationQueue.instance = null
-        Thread.setDefaultUncaughtExceptionHandler(previousUncaughtHandler)
     }
 
     private fun field(name: String) =
@@ -79,12 +71,8 @@ class GpodderAuthenticationFragmentAsyncCharacterizationTest {
         val dialog = fragment.dialog!!
         dialog.findViewById<EditText>(R.id.etxtUsername).setText(username)
         dialog.findViewById<EditText>(R.id.etxtPassword).setText(password)
-        try {
-            dialog.findViewById<Button>(R.id.butLogin).performClick()
-            shadowOf(Looper.getMainLooper()).idle()
-        } catch (error: Throwable) {
-            capturedCulprit = error
-        }
+        dialog.findViewById<Button>(R.id.butLogin).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
     }
 
     private fun showDeviceStep(service: FakeGpodnetService): GpodderAuthenticationFragment {
@@ -143,14 +131,20 @@ class GpodderAuthenticationFragmentAsyncCharacterizationTest {
     }
 
     @Test
-    fun testWrongPasswordErrorPathThrowsFromNullCause() {
+    fun testWrongPasswordErrorRendersServerMessageWithNoCause() {
         val service = FakeGpodnetService()
         service.loginError = GpodnetServiceAuthenticationException("Wrong username or password")
         val fragment = showLoginStep(service)
 
         clickLogin(fragment, "someone", "secret")
 
-        assertTrue(capturedCulprit is NullPointerException)
+        val dialog = fragment.dialog!!
+        val credentialsError = dialog.findViewById<TextView>(R.id.credentialsError)
+        assertEquals("Wrong username or password", credentialsError.text.toString())
+        assertEquals(View.VISIBLE, credentialsError.visibility)
+        assertTrue(dialog.findViewById<Button>(R.id.butLogin).isEnabled)
+        assertEquals(View.GONE, dialog.findViewById<ProgressBar>(R.id.progBarLogin).visibility)
+        assertEquals(1, currentStep(fragment))
     }
 
     @Test
