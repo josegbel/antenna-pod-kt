@@ -1788,3 +1788,116 @@ Findings 1–5 are MINOR/NIT and non-blocking; Finding 2 (ordering-fragile devia
 `Cleared`) are the two worth a code touch in PR polish, and Finding 1 warrants a device check before the
 PR is considered complete. No escalation to José required; OQ1 remains separately open for him as a
 non-blocking positioning question.
+
+## Code Review Verdict — Gap 16 Fix (post-#32)
+_By: migration-code-reviewer | 2026-09-01 | Loop 1 of max 3_
+
+### Verdict
+APPROVE
+
+### Scope of this review
+Branch `fix/gpodder-auth-causeless-exception-crash`, one commit `c80132841` off `origin/develop`
+`cfe560cb0` (PR #32 merged). Reviewed `git diff origin/develop...HEAD`: 6 files — 1 production
+(`GpodderAuthenticationFragment.kt`, +1/-1), 1 test
+(`GpodderAuthenticationFragmentAsyncCharacterizationTest.kt`, harness removal + one test inverted),
+4 docs (this task file, the checkpoint, the modernization future-work file, `ui/preferences/README.md`).
+
+### What was verified
+
+**1. Scope — CLEAN.** Every modified file is inside the OQ1 pre-authorised change set (Plan → OQ1
+"If José prefers to fix it here" paragraph). No build files (`libs.versions.toml` / `build.gradle`
+untouched — the catalog line is already on develop via #32). No other production file. No other test
+file. `git diff --name-only origin/develop...HEAD -- ui/preferences/src/test/` returns only the one
+async characterization file.
+
+**2. The fix is correct and complete.** Site A `catch (error: Throwable)`:
+`txtvError.text = error.cause!!.message` → `error.cause?.message ?: error.message`. `txtvError` binds
+`R.id.credentialsError` (line 99); `login` = `R.id.butLogin`; `progressBar` = `R.id.progBarLogin` —
+the inverted test's `findViewById` ids line up with the production bindings.
+   - `GpodnetServiceAuthenticationException("Wrong username or password")` → `super(message)` only,
+     no cause (confirmed from source: `GpodnetServiceAuthenticationException.java` →
+     `GpodnetServiceException(String)` → `SyncServiceException(String)`). `error.cause` is null →
+     `error.cause?.message` null → falls through to `error.message` = `"Wrong username or password"`.
+     Rendered, no crash. This is the exact reachable crash Research finding 6 flagged, now removed.
+   - `GpodnetServiceException(IOException("boom"))` → `super(Throwable)` sets `cause` = the
+     `IOException`. `error.cause?.message` = `"boom"`, so the cause branch still wins.
+     `testLoginErrorWithCauseRendersCauseMessage` is byte-identical to develop and green on both
+     flavours — the cause-present path is unregressed.
+   - The old expression NPE'd whenever `error.cause` was null; the new one cannot throw. The only
+     residual edge is `error.cause == null && error.message == null`, which yields
+     `TextView.setText(null)` — renders empty, no crash, strictly better than the NPE, and no
+     constructed-in-repo `Gpodnet*Exception` reaches it (all carry a message or a cause). Acceptable;
+     this is the pre-authorised expression verbatim.
+
+**3. Site B asymmetry preserved (Milestone 15 D7 two-handler table).** `createDevice`'s handler
+(line ~197) still reads `txtvError.text = error.message` — unchanged, not in the diff. Site A is now
+"cause-first, message fallback" (`?.` + `?:`); Site B stays "message only". Deliberately divergent,
+not accidentally converged. `grep -F -c` on `GpodderAuthenticationFragment.kt`: `error.cause!!.message`
+**0**, `error.cause?.message` **1**, `error.message` **2** (Site A fallback + Site B) — matches AC14's
+post-OQ1 counts exactly.
+
+**4. The test inversion is sound.** `testWrongPasswordErrorPathThrowsFromNullCause` →
+`testWrongPasswordErrorRendersServerMessageWithNoCause`. It now makes five positive assertions on
+real rendered state — `credentialsError.text == "Wrong username or password"`, `VISIBLE`,
+`butLogin.isEnabled`, `progBarLogin == GONE`, `currentStep == 1` — not a tautology and not a
+bare "it didn't throw". It pins the fixed behavior. Ran green on both flavours (testcase present in
+both `testFreeDebugUnitTest` and `testPlayDebugUnitTest` result XML).
+   - Harness removal is complete and has no orphaned consumer:
+     `grep -rn "capturedCulprit|previousUncaughtHandler|UncaughtExceptionHandler|setDefaultUncaughtExceptionHandler"`
+     over `ui/preferences/src/test/` returns nothing. `@Before` now does only the init calls +
+     `RecordingSynchronizationQueue` + `setHosturl`; `@After` only nulls `SynchronizationQueue.instance`.
+   - `clickLogin` lost its `try/catch` around `performClick()` + `idle()`. Checked every remaining
+     caller: `testLoginSuccess…`, `testLoginWritesDevicesBeforeCredentialFields`,
+     `testLoginErrorWithCauseRendersCauseMessage`, and the `showDeviceStep`-based
+     `testCreateDevice…` pair. With the fix in place no exercised path throws out of `performClick()`
+     — the wrong-password path now renders instead of throwing, the cause path is caught and
+     rendered, the success/create paths never error. The swallow was C7 normalization machinery for
+     the one NPE-observing test only; removing it does not weaken the other five.
+
+**5. AC9 boundary — respected and clearly documented.** This commit is on a branch off merged
+develop, past the Step-3-commit → Step-8-state freeze window (which closed at PR #32). The
+Implementation Notes "Gap 16 fix — OQ1 resolved (post-#32)" subsection states this explicitly
+("deliberately past the AC9 window … the separately-reviewable post-equivalence behavior change
+José approved"). No other AC9-frozen `@Test` body changed — the diff to the async characterization
+file touches only the two removed fields, `@Before`/`@After`, the `clickLogin` helper (not a `@Test`
+body), and the one inverted test. The other five `@Test` bodies are byte-identical.
+
+**6. Counts and docs internally consistent.** Verified against the working tree:
+   - `grep -o '!!' | wc -l`: `SynchronizationPreferencesFragment.kt` 22, `GpodderAuthenticationFragment.kt`
+     **11**, `NextcloudAuthenticationFragment.kt` 7, `AuthenticationDialog.kt` 0 → slice **40**.
+     Matches AC13's post-#32 column (12→11, 41→40), the checkpoint's `!! 22/11/7/0=40`, D11's
+     inline note, and the future-work file's "49 → 41 … → 40".
+   - AC12 row (d), D10 row (d) (both the Plan table and the Implementation Notes table), the OQ1
+     row in Open Questions, the OQ1-resolved callout, OQ3's removed caveat, README convention 4's
+     new exception paragraph, and the future-work file's "Gap 16 — RESOLVED / NO LONGER Milestone
+     18's" edits all agree: FIXED at Site A only, `error.cause?.message ?: error.message`, inverted
+     test name, standalone follow-up PR, Milestone 15's task file intentionally not edited (flagged
+     as stale-for-Site-A, not rewritten).
+   - Suite count unchanged at **55** (one test renamed/inverted, none added or removed); async
+     characterization class stays at **6**.
+
+**7. Build re-run here (no output filtering).**
+   - `./gradlew --console=plain :ui:preferences:testFreeDebugUnitTest :ui:preferences:testPlayDebugUnitTest`
+     — BUILD SUCCESSFUL; result XML shows **55 tests, 0 skipped, 0 failures, 0 errors** on each
+     flavour; the async class 6/0/0/0 on each.
+   - `./gradlew --console=plain :app:assembleDebug` — BUILD SUCCESSFUL.
+   - `./gradlew --console=plain :ui:preferences:ktlintCheck` — BUILD SUCCESSFUL.
+
+### Findings
+None blocking. One informational note:
+
+- **Severity:** MINOR
+- **Class:** Correctness
+- **File:** `ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/GpodderAuthenticationFragment.kt:142`
+- **Finding:** If a future `Throwable` reaches this handler with both `cause == null` and `message == null`,
+  `txtvError.text` is set to `null` and the error view shows blank. No such exception is constructed in
+  the current codebase, and blank text is strictly better than the prior NPE crash, so this is not a
+  regression and not a merge blocker.
+- **Suggested fix:** Optional, defer — if a non-empty fallback is ever wanted, `?: getString(R.string.error_label_details)`
+  or similar. Not required for this PR; the expression is the OQ1 pre-authorised one and José approved it.
+
+### Loop status
+Loop 1 of max 3 — **APPROVE**. No CRITICAL or MAJOR findings open. The fix removes a reachable crash
+on the most common gpodder.net login failure, widens no credential exposure, is pinned by a real
+positive-assertion test, and stays inside the pre-authorised OQ1 change set. Clear to open the
+standalone follow-up PR.
