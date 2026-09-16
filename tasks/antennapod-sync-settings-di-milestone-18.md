@@ -1042,6 +1042,21 @@ Track: di. Milestone 18, Step 2 of 10.
 
 Confirmed `git diff --stat origin/develop` still shows only the four expected paths (`ui/preferences/build.gradle`, `SyncSettingsRepository.kt`, `SyncSettingsModule.kt`, `DefaultSyncSettingsRepositoryTest.kt`) before committing.
 
+### Step 3 — Characterization tests for the four gaps, against consumer code still byte-identical to `origin/develop`.
+
+Created `ui/preferences/src/test/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SyncSettingsSeamCharacterizationTest.kt`, 4 tests per D12/Step 3, all green on first run:
+
+1. `testQueueIsResolvedFromTheGlobalAtEachClickNotCachedAtAttach` — attaches with queue A installed, clicks the sync row, asserts A recorded `syncImmediately`; installs queue B with the fragment already attached, clicks force-full-sync, asserts B recorded `fullSync` and A recorded nothing further. Pins gap 2 (read timing) and rules out an injection-time-cached shape.
+2. `testLogoutRowClearsCredentialsFlipsGpodnetNotificationsAndThenClearsTheQueue` — pins gap 5: the logout row's `SynchronizationCredentials.clear()` → `UserPreferences.setGpodnetNotificationsEnabled()` side effect, asserting credentials are null, the gpodnet-notifications flag is flipped back to enabled, and the queue's `clear()` call captured the *cleared* username via the `onCall` hook (proving ordering: credentials clear happens before queue clear). **Observation, not a defect:** a near-identical test, `testLogoutOrderingAndCrossClassSideEffect`, already exists in the pre-existing, byte-identical `SynchronizationPreferencesFragmentCharacterizationTest.kt` (one of the original 55) and already asserts this same side effect. Research's characterization-gaps table (gap 5) said this was uncovered; that appears to have been an oversight rather than a real gap. Writing D12's test anyway, as specified — it is a named Step 3 deliverable that later gets repointed onto the Hilt test host in Step 4 (same as the pre-existing test), so it is not pure duplication, but the overlap is real and flagged here rather than silently absorbed.
+3. `testSharedAxisTransitionsAndSurfaceBackgroundAreAppliedToTheAttachedFragment` — pins gap 3: asserts `fragment.enterTransition`/`returnTransition`/`exitTransition`/`reenterTransition` are all `MaterialSharedAxis` instances, and the fragment's root view background is a `ColorDrawable` matching `ThemeUtils.getColorFromAttr(context, R.attr.colorSurface)`.
+4. `testFragmentRemainsInstantiableByFragmentFactory` — pins gap 3b: `FragmentFactory().instantiate(classLoader, className)` succeeds and returns a `SynchronizationPreferencesFragment`.
+
+**AC10 verification:**
+- `git diff origin/develop -- .../SynchronizationPreferencesFragment.kt .../SynchronizationPreferencesViewModel.kt` — **empty**. No consumer touched.
+- `./gradlew :ui:preferences:testFreeDebugUnitTest --rerun` and `:testPlayDebugUnitTest --rerun` — both **BUILD SUCCESSFUL**, **62/62** tests in the `synchronization` package on both flavours, 0 failures, 0 errors.
+
+Step 3 complete. Committing, then continuing to Step 4.
+
 ### Not yet started (at time of writing)
-Steps 3 through 9, proceeding now in order.
+Steps 4 through 9, proceeding now in order.
 
