@@ -1141,6 +1141,46 @@ Re-read D5's amendment, Step 4's "seven ... sites named in D5 (as amended 2026-0
 
 Step 6 complete. Committing (fragment + `PreferenceActivity.java` + the 7th-site test fix together), then continuing to Step 6a.
 
+### Step 6a — The `PreferenceActivity` host gate. No repo diff.
+
+Per D15. No file created or edited; `app/src/androidTest/**` confirmed byte-identical (`git diff --name-only origin/develop -- app/src/androidTest/` empty).
+
+**(i) The pre-existing instrumented `PreferencesTest` suite, after-half.** Re-ran on the same emulator (Pixel_9a) used for Step 1's baseline: `./gradlew :app:connectedPlayDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=de.test.antennapod.ui.PreferencesTest` → **22 `@Test`, 0 failures, 0 errors, 3 skipped**. Row-for-row comparison against Step 1's saved baseline (`/tmp/m18-baseline/step1-PreferencesTest-results.xml` vs `step6a-PreferencesTest-results.xml`): **22/22 rows match exactly, 0 mismatches** (the 3 skips — `testBluetoothReconnect`, `testHeadPhonesReconnect`, `testEnablePersistentPlaybackControls` — are the same hardware-dependent skips at both baseline and after, unrelated to this milestone). AC24(i) satisfied.
+
+**(ii) The manual app run.** `./gradlew --console=plain :app:installPlayDebug && adb shell monkey -p de.danoeh.antennapod.debug 1` — AGENTS.md's exact command, run against the same emulator. App launched cleanly (`mCurrentFocus`/`mFocusedApp` confirmed on `MainActivity`, no `FATAL EXCEPTION`/`AndroidRuntime` crash in logcat). Walked the six-line checklist via `adb shell input tap`/`uiautomator dump` for precise coordinates and `adb exec-out screencap` for visual confirmation at each step:
+
+1. **Settings/`MainPreferencesFragment`** — opened via the app's own More → Settings menu; renders the full ladder (User interface, Playback, Downloads, Synchronization, Backup & restore, Notifications, Parental Controls). **PASS.**
+2. **Synchronization (the one Hilt fragment)** — opens; ActionBar title "Synchronization" renders (from the `@HiltViewModel`'s `uiState`); the four preference rows (Choose synchronization provider, Synchronize now, Force full synchronization, Logout) render; the provider-chooser dialog opens (showing Gpodder.net and Nextcloud Gpodder Sync options) and cancels cleanly via back button, returning to the Sync screen intact; the sync row (disabled, since not connected — expected) is tappable with no crash, confirming the `@Inject lateinit var syncSettings` field-injection path is live. This exercises the full `Hilt_PreferenceActivity` → `ToolbarActivity` → `Hilt_SynchronizationPreferencesFragment` → `AnimatedPreferenceFragment` chain that no automated test in this milestone touches. **PASS.**
+3. **User Interface and Playback as non-Hilt siblings** — both open under the now-Hilt host and render their full preference lists (Theming/Episode information for User Interface; Interruptions/Playback control/Reassign hardware buttons/Queue for Playback), no crash. **PASS.**
+4. **Back stack** — up-arrow tapped from both a non-Hilt sibling (User Interface, and again from Playback) and from the Sync screen; in every case it popped back to `MainPreferencesFragment` rather than finishing the Activity. **PASS.**
+5. **Settings search, both routes, with highlight** — searched "speed" → tapped "Playback speed" (Playback > Playback control): routed into the non-Hilt Playback screen with the "Playback speed" row visibly highlighted (gray background) via `result.highlight(fragment)`. Searched "logout" → tapped "Logout" (Synchronization): routed into the Hilt Sync screen with the "Logout" row visibly highlighted the same way. Both confirm `onSearchResultClicked`'s `:160-161` branch acts correctly on the fragment instance `openScreen` returned, for both a Hilt and non-Hilt target. **PASS.**
+6. **Notification Preferences** — tapped from the Settings ladder; confirmed it short-circuits directly to the system "AntennaPod Debug" notification-settings screen (never attaching `NotificationPreferencesFragment`), exactly as D15's documented trap describes. Not recorded as a fragment-attach pass. **PASS.**
+
+Full-session logcat scan (`adb logcat -d | grep de.danoeh.antennapod | grep -iE "FATAL EXCEPTION|AndroidRuntime"`) across the entire manual run: **zero matches.**
+
+**AC24 fully satisfied:**
+- (i) row-for-row instrumented comparison — 22/22 match, done above.
+- (ii) all six checklist lines recorded pass, above; Notification Preferences correctly recorded as an Intent-fire confirmation, not a fragment-attach pass.
+- (iii) D15's residual-risk paragraph (five of nine sibling fragments never opened by either half; neither half runs in CI; no automated unit test of `PreferenceActivity` added) is accurate and carried forward unchanged — nothing in this Step 6a run contradicts or narrows it. `git diff --name-only origin/develop -- app/src/androidTest/` confirmed empty.
+
+Step 6a complete, no repo diff, nothing to commit. Continuing to Step 7.
+
+### Step 7 — Prove the graph is real, not a silent default-factory fallback.
+
+Created `ui/preferences/src/test/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SyncSettingsHiltGraphTest.kt` per D9: `@HiltAndroidTest`, `@Config(application = HiltTestApplication::class)`, `HiltAndroidRule`, `@UninstallModules(SyncSettingsModule::class)`, and a file-private `RecordingSyncSettingsRepository` supplied via `@BindValue` (matching M17's `ManualDispatcher` file-private precedent). Two tests, both named in D9:
+
+1. `testFragmentFieldInjectionReceivesTheBoundRepository` — clicks the sync row, asserts the `@BindValue`-bound fake recorded `syncImmediately` and the `RecordingSynchronizationQueue` installed on the global recorded nothing. Fails with `UninitializedPropertyAccessException` if `@AndroidEntryPoint` field injection did not happen — a real discriminator, not a trivially-true assertion.
+2. `testViewModelIsConstructedByHiltWithTheBoundRepository` — configures the fake to report a connected provider and a known last-sync timestamp, asserts the ActionBar subtitle contains the "Successful" report string. This is only reachable if `HiltViewModelFactory` (not `NewInstanceFactory` calling D6's no-arg constructor, which would construct a `DefaultSyncSettingsRepository` reading the real, still-disconnected `SynchronizationSettings` statics and render `Absent` instead) built the ViewModel.
+
+**Fixes made while writing these (both mechanical, not design choices):** (a) `updateScreen()` still reads `SynchronizationSettings`/`SynchronizationCredentials` directly (D14 — those aren't behind the seam), so `setUp()` needed the same three `init()` calls every other fragment-attaching test in this suite already has. (b) Test 1's first draft asserted `fake.calls` equals exactly `[syncImmediately]`, but the fragment's `onStart()` (which fires automatically when the fragment attaches to an already-resumed host) calls `viewModel.onStarted()`, which reads `repository.isProviderConnected()` on the same bound fake — so the list legitimately contains that read too. Fixed by clearing `fake.calls` after attach, before the click, isolating the click's own effect (same pattern the pre-existing `testSyncAndFullSyncRowsCallQueueWithoutStateChange` uses with `recordingQueue.calls.clear()`).
+
+**Gate:**
+- Both new tests green individually, then the full suite: `./gradlew :ui:preferences:testFreeDebugUnitTest --rerun :ui:preferences:testPlayDebugUnitTest --rerun` — BUILD SUCCESSFUL, **64/64** on both flavours, 0 failures, 0 errors.
+- `./gradlew ktlintCheck` — BUILD SUCCESSFUL.
+- AC5 re-verified: `git grep --untracked -l "@HiltAndroidTest" -- 'ui/preferences/src/test/**'` lists exactly the 6 files AC5 names (the 4 pre-existing classes plus `SyncSettingsSeamCharacterizationTest.kt` and `SyncSettingsHiltGraphTest.kt`).
+
+Step 7 complete. Committing (also folds Step 6a's no-diff Implementation Notes, already written above), then continuing to Step 8.
+
 ### Not yet started (at time of writing)
-Step 6a through 9.
+Steps 8 and 9.
 
