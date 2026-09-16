@@ -18,17 +18,22 @@ import androidx.lifecycle.lifecycleScope
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
+import dagger.hilt.android.AndroidEntryPoint
 import de.danoeh.antennapod.event.SyncServiceEvent
 import de.danoeh.antennapod.net.sync.serviceinterface.SynchronizationProvider
-import de.danoeh.antennapod.net.sync.serviceinterface.SynchronizationQueue
 import de.danoeh.antennapod.storage.preferences.SynchronizationCredentials
 import de.danoeh.antennapod.storage.preferences.SynchronizationSettings
 import de.danoeh.antennapod.ui.preferences.R
 import de.danoeh.antennapod.ui.preferences.screen.AnimatedPreferenceFragment
+import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
+
+    @Inject
+    lateinit var syncSettings: SyncSettingsRepository
 
     private val viewModel: SynchronizationPreferencesViewModel by lazy {
         ViewModelProvider(this)[SynchronizationPreferencesViewModel::class.java]
@@ -118,16 +123,16 @@ class SynchronizationPreferencesFragment : AnimatedPreferenceFragment() {
                 true
             }
         findPreference<Preference>(PREFERENCE_SYNC)!!.setOnPreferenceClickListener {
-            SynchronizationQueue.instance!!.syncImmediately()
+            syncSettings.syncImmediately()
             true
         }
         findPreference<Preference>(PREFERENCE_FORCE_FULL_SYNC)!!.setOnPreferenceClickListener {
-            SynchronizationQueue.instance!!.fullSync()
+            syncSettings.fullSync()
             true
         }
         findPreference<Preference>(PREFERENCE_LOGOUT)!!.setOnPreferenceClickListener {
             SynchronizationCredentials.clear()
-            SynchronizationQueue.instance!!.clear()
+            syncSettings.clearSyncQueue()
             Snackbar.make(view!!, R.string.pref_synchronization_logout_toast, Snackbar.LENGTH_LONG).show()
             SynchronizationSettings.setSelectedSyncProvider(null)
             updateScreen()

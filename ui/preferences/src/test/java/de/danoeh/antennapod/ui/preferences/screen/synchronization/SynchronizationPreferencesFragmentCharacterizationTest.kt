@@ -170,7 +170,7 @@ class SynchronizationPreferencesFragmentCharacterizationTest {
 
         val fragment = SynchronizationPreferencesFragment()
         assertThrows(NullPointerException::class.java) {
-            val activity = Robolectric.buildActivity(SyncSettingsTestHost::class.java).setup().get()
+            val activity = Robolectric.buildActivity(SyncSettingsHiltTestHost::class.java).setup().get()
             activity.supportFragmentManager.beginTransaction()
                 .add(android.R.id.content, fragment, "sync-settings")
                 .commitNow()
