@@ -1077,6 +1077,18 @@ Implemented exactly per Step 4's file list: catalog line (`hilt-android-testing`
 
 Step 4 complete. Committing, then continuing to Step 5.
 
+### Step 5 — `@HiltViewModel` on `SynchronizationPreferencesViewModel`; its five static reads route through the injected seam.
+
+Touched only `SynchronizationPreferencesViewModel.kt`, exactly per Step 5: added `@HiltViewModel` and `@Inject constructor(private val repository: SyncSettingsRepository)`, D6's no-arg secondary constructor (`constructor() : this(DefaultSyncSettingsRepository())`), replaced the five static reads (`SynchronizationSettings.isProviderConnected()`, two `isLastSyncSuccessful()`, two `getLastSyncAttempt()`) with `repository.*` equivalents, removed the now-unused `SynchronizationSettings` import. `internal class SyncServiceEventSubscriber` stays `internal`; `ThreadMode.POSTING`/`sticky = true` stay; `stateIn(viewModelScope, SharingStarted.WhileSubscribed(0, 0), null)`'s two zeros stay. The fragment is untouched — confirmed by an empty diff.
+
+**Gate:**
+- `git diff origin/develop -- .../SynchronizationPreferencesFragment.kt` — empty (fragment not touched this step).
+- `git diff origin/develop -- .../SynchronizationPreferencesViewModelTest.kt` — empty (the equivalence oracle is unedited).
+- `./gradlew :ui:preferences:testFreeDebugUnitTest --rerun` and `:testPlayDebugUnitTest --rerun` — both BUILD SUCCESSFUL, 62/62, 0 failures. `SynchronizationPreferencesViewModelTest`'s 7 tests all green, unedited, proving the seam-routed reads produce identical `uiState` values to the direct static reads they replaced.
+- `./gradlew ktlintCheck` — BUILD SUCCESSFUL.
+
+Step 5 complete. Committing, then continuing to Step 6.
+
 ### Not yet started (at time of writing)
 Steps 5 through 9, proceeding now in order.
 

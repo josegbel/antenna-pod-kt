@@ -3,9 +3,10 @@ package de.danoeh.antennapod.ui.preferences.screen.synchronization
 import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
 import de.danoeh.antennapod.event.SyncServiceEvent
-import de.danoeh.antennapod.storage.preferences.SynchronizationSettings
 import de.danoeh.antennapod.ui.preferences.R
+import javax.inject.Inject
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -16,7 +17,12 @@ import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 
-class SynchronizationPreferencesViewModel : ViewModel() {
+@HiltViewModel
+class SynchronizationPreferencesViewModel @Inject constructor(
+    private val repository: SyncSettingsRepository
+) : ViewModel() {
+
+    constructor() : this(DefaultSyncSettingsRepository())
 
     internal class SyncServiceEventSubscriber(private val onEvent: (SyncServiceEvent) -> Unit) {
         @Subscribe(threadMode = ThreadMode.POSTING, sticky = true)
@@ -38,10 +44,10 @@ class SynchronizationPreferencesViewModel : ViewModel() {
 
     fun onStarted() {
         _uiState.value = _uiState.value.copy(
-            subtitle = if (SynchronizationSettings.isProviderConnected()) {
+            subtitle = if (repository.isProviderConnected()) {
                 SyncSubtitle.LastSyncReport(
-                    SynchronizationSettings.isLastSyncSuccessful(),
-                    SynchronizationSettings.getLastSyncAttempt()
+                    repository.isLastSyncSuccessful(),
+                    repository.lastSyncAttempt()
                 )
             } else {
                 SyncSubtitle.Absent
@@ -55,8 +61,8 @@ class SynchronizationPreferencesViewModel : ViewModel() {
                 event.messageResId == R.string.sync_status_success
             ) {
                 SyncSubtitle.LastSyncReport(
-                    SynchronizationSettings.isLastSyncSuccessful(),
-                    SynchronizationSettings.getLastSyncAttempt()
+                    repository.isLastSyncSuccessful(),
+                    repository.lastSyncAttempt()
                 )
             } else {
                 SyncSubtitle.Message(event.messageResId)
