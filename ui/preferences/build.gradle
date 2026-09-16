@@ -3,6 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ktlint)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.ksp)
 }
 apply from: "../../common.gradle"
 apply from: "../../playFlavor.gradle"
@@ -29,6 +31,10 @@ android {
     }
 }
 
+hilt {
+    enableTransformForLocalTests = true
+}
+
 dependencies {
     implementation project(":event")
     implementation project(":net:common")
@@ -42,6 +48,8 @@ dependencies {
     implementation project(':net:sync:service')
 
     annotationProcessor libs.androidx.annotation
+    implementation libs.hilt.android
+    ksp libs.hilt.compiler
     implementation libs.androidx.appcompat
     implementation libs.androidx.fragment
     implementation libs.google.material

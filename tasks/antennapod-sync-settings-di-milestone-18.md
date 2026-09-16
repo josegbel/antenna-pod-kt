@@ -1,0 +1,1047 @@
+# antennapod-sync-settings-di-milestone-18
+
+> **Description:** `di` track for the Sync Settings screen modernization sequence. Wire `SynchronizationPreferencesViewModel` (stood up in Milestone 17 as a plain `ViewModel` with the default factory) through Hilt as `@HiltViewModel`, introduce an injectable repository/seam abstraction over `:storage:preferences`' `SynchronizationSettings`/`SynchronizationCredentials` statics and the `SynchronizationQueue.instance` mutable global, and eliminate the five forced `SynchronizationQueue.instance!!` sites Milestone 17 deliberately deferred. Seventh milestone of the six-milestone Sync Settings sequence (15 `kotlin` → 15b before-screenshot → 16 toolchain → 17 concurrency+MVVM → **18 `di`** → 19 `:storage:preferences` scope TBD → 20 `compose`) and the seventeenth in the portfolio overall. See `tasks/antennapod-sync-settings-modernization-future-work.md` → "Milestone 18 — `di` wiring" for the sequence position and the by-name inheritances.
+> **Repo:** `services/android-migration/projects/portfolio/antennapod`
+> **Created:** 2026-09-01
+
+> **Pre-research context (carried over from Milestone 16's outcome, Milestone 17's outcome + checkpoint, and the modernization future-work file — do not re-derive):**
+>
+> - **Branch/baseline.** Cut fresh from a fetched `origin/develop`. As of scaffolding, `origin/develop` tip is **`b8eda5b67`** ("fix(ui:preferences): render server message when gpodder auth exception has no cause (#33)"). That commit contains **both** Milestone 17 (PR #32, merge commit `cfe560cb0`) and its OQ1 follow-up (PR #33, `b8eda5b67`). Milestones 15 (`f5d4c5551`), 15b (`45904a410`) and 16 (`8e4c29217`) are all ancestors. Research must re-fetch and re-confirm before Step 1 — 64 unrelated portfolio commits landed on `develop` between M16 and now, so do not assume the tree matches any earlier milestone's measurements.
+> - **Hilt infra already exists on `develop` (Milestone 16, PR #31), unused.** Milestone 16 catalogued Hilt **2.58** (stepped down from 2.59+, which needs AGP 9.0.0 — this repo is on 8.11.0), applied `@HiltAndroidApp` to `PodcastApp`, and catalogued KSP **2.3.11** (root-declared with `apply false`, applied to **no module**). No DI graph, no `@HiltViewModel`, no `@AndroidEntryPoint`, no `@Inject`, no `@Module` exists anywhere yet. **This milestone writes the repo's first actual Hilt graph.** KSP must be applied to `:ui:preferences` here (Hilt's annotation processor runs on KSP or kapt — the portfolio has been avoiding kapt; confirm KSP is the intended path during Research).
+> - **What Milestone 17 delivered (the layer this milestone wires):** `SynchronizationPreferencesViewModel` (`ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SynchronizationPreferencesViewModel.kt`) — a plain `ViewModel` (not `AndroidViewModel`), `StateFlow` exposure over an immutable `data class` / `sealed interface` state, acquired via the **default** `ViewModelProvider(this)` (no hand-written factory). It owns the ActionBar title/subtitle state and a `callbackFlow`/`stateIn(WhileSubscribed(0,0), null)` EventBus→`StateFlow<SyncServiceEvent?>` bridge whose subscriber is an `internal` (bytecode-public — EventBus reflection needs it) nested class. It takes **no constructor dependencies on purpose** — M17's D4 recorded that taking `SynchronizationQueue` there would pre-empt this milestone's seam.
+> - **Milestone 17's characterization suite is this milestone's regression net.** `ui/preferences/src/test/java/.../screen/synchronization/` after M17+M33 — **re-measure at Step 1** (M17 shipped at 55 `@Test` across 11 files; M33 inverted one test body, no count change; expect **55**, verify). Every test reads/writes the static preference globals and `SynchronizationQueue.instance` **directly** by design (see `RecordingSynchronizationQueue` and M15's D6). When this milestone puts a repository/DI seam behind those globals, **this suite is what proves the seam preserves behavior** — it must stay green throughout, not be rewritten alongside the DI change. `RecordingSynchronizationQueue` (installed via `SynchronizationQueue.instance = …` by every test class) must keep working, or the seam has to provide a test-injection path that is provably equivalent.
+> - **The five `SynchronizationQueue.instance!!` sites are this milestone's, by name** (M17 D4, future-work file): three in `SynchronizationPreferencesFragment.kt` (the sync / force-full-sync / logout preference-row click listeners), two in `GpodderAuthenticationFragment.kt` (host step, finish step). Binding `SynchronizationQueue` as a provided dependency is the mechanism; whether the fragments get it via the ViewModel, via `@AndroidEntryPoint` field injection, or via an `EntryPoint` is a Research/Plan question.
+> - **`kotlinx-coroutines-test` becomes genuinely necessary here and is this milestone's toolchain bill** (M17 D9, future-work file). Milestone 17 kept every coroutine single-threaded and testable without it (reflected `ioDispatcher` seam + Robolectric `idle()` + a hand-written `ManualDispatcher`). Once a ViewModel read becomes `suspend` behind an injected repository, `runTest`/`TestDispatcher` is the right tool. Catalogue it as M18 toolchain work. Same question, lower stakes, for **Turbine** if flow-assertion ergonomics are wanted — decide explicitly.
+> - **Gap 16 is NOT this milestone's** — José resolved OQ1 fix-here on 2026-09-01; the one-line fix shipped in PR #33. `ui/preferences/README.md` convention 4 was updated. Do not re-open it.
+> - **`:storage:preferences` has no test source set at all** (future-work file, M19 note). If the repository seam is defined as a Kotlin interface *in* `:storage:preferences`, that module gains its first tests. A lighter option: define the interface in `:ui:preferences` (or a small new interface module) and leave `:storage:preferences` Java statics untouched behind it. `SynchronizationSettings` has **10 call sites outside the slice** across `:net:sync:service`, `:net:download:service`, `:app`, and `:ui:preferences`' own `NotificationPreferencesFragment` — a full conversion of the statics is **Milestone 19's** open question, explicitly not this one's. This milestone wraps, it does not convert.
+> - **`ClientConfigurator` pattern.** The future-work file frames this milestone as "replacing `ClientConfigurator`'s static-init-plus-mutable-global-singleton pattern **for this slice specifically**" — not repo-wide. Research must survey `ClientConfigurator` and how `SynchronizationQueue.instance` is currently initialised before the seam shape is finalized.
+> - **DI is à la carte in this portfolio** — Milestone 18 does `di` for the Sync Settings slice only. It is not a mandate to Hilt-ify `:ui:preferences` or `:app` broadly. Keep File Scope to the slice + the minimum graph wiring.
+> - **CI bar** (from M16 D12 / M17): `assemblePlayDebug` + `assemblePlayRelease` + `assembleFreeRelease` + `assemblePlayDebugAndroidTest` + `checkstyle lint` + `ktlintCheck`, plus **both** flavoured `:ui:preferences` test tasks locally (`testFreeDebugUnitTest` / `testPlayDebugUnitTest` — the module applies `playFlavor.gradle`; CI runs only the Play one).
+> - **Autonomy:** full-chain-to-PR authorized by José in-session 2026-09-01 for this milestone (scaffold → research → plan → red-team plan, max 2 loops → implement → code review, max 3 loops → red-team implementation → PR opened; no pause between stages; stops at PR, merge stays with José; surface any blocking decision — an OQ1-style call — mid-flight).
+> - This is unaffiliated OSS portfolio case-study work — see `services/android-migration/projects/portfolio/README.md`.
+
+## Research
+_Last updated by: legacy-android-researcher | 2026-09-01_
+
+**Branch-state precondition — verified, tree is clean.** `git fetch origin` run. `origin/develop` tip is **`b8eda5b674f00b0fa7df1ffc2a5283510a4a6e4a`** ("fix(ui:preferences): render server message when gpodder auth exception has no cause (#33)") — exactly the commit the pre-research block names. All five named ancestors confirmed by `git merge-base --is-ancestor … origin/develop` → true: M15 `f5d4c5551` (2026-08-06), M15b `45904a410` (2026-08-20), M16 `8e4c29217` (2026-08-28), M17 `cfe560cb0` (2026-09-01, PR #32), PR #33 `b8eda5b67` (2026-09-01). Working tree is **on `develop` at `b8eda5b67`**; `git diff HEAD origin/develop` is **empty**, so every measurement below is byte-identical to `origin/develop`. `git status --short` shows four untracked paths only: this task file, its checkpoint, and M16's two throwaway keystores (`app/keystore`, `app-wearos/keystore`). Milestone branch **not** cut — that stays the developer's Step 1, and `AGENTS.md` forbids committing on `develop`.
+
+**Everything below was re-measured on this tree.** Where a re-measurement contradicts a carried number, the correction is stated explicitly rather than silently applied.
+
+### Summary
+
+The Sync Settings slice is five Kotlin files under `ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/` — the four M15 conversions plus `SynchronizationPreferencesViewModel.kt`, which M17 added. It has a state holder for exactly one screen and, within that screen, for exactly two things (the ActionBar title/subtitle and the sticky `SyncServiceEvent`). Every other value the slice reads still comes from a process-global Java static: `SynchronizationSettings` and `SynchronizationCredentials` in `:storage:preferences` (both `public static`-only classes over a `SharedPreferences` field initialised once by `ClientConfigurator.initialize`), and `SynchronizationQueue.instance`, a `@JvmStatic var … ?= null` on a companion object in `:net:sync:service-interface`, assigned exactly once in production at `ClientConfigurator.java:53` and read with `!!` at **seven** production sites in the slice — not five. M16's Hilt 2.58 and KSP 2.3.11 are catalogued and `apply false` at root; the only Hilt artifact anywhere in source is `@HiltAndroidApp` on `PodcastApp` (`app/src/main/java/de/danoeh/antennapod/PodcastApp.java:14`). There is no `@Inject`, no `@Module`, no `@AndroidEntryPoint`, no `@HiltViewModel`, and no KSP or kapt application in the entire repository. This milestone writes the repo's first DI graph.
+
+The `di` track's work is therefore not "add Hilt to a module that already does DI badly" — it is standing up a graph from zero across a module boundary, and the single hard constraint is that the 55-test characterization suite in `ui/preferences/src/test/.../screen/synchronization/` must stay green and unmodified while it does. That constraint collides directly with the mechanism Hilt uses for fragments. `@HiltViewModel` is only reachable through `getDefaultViewModelProviderFactory()` on an `@AndroidEntryPoint` Fragment/Activity; `@AndroidEntryPoint` on a Fragment requires an `@AndroidEntryPoint` host Activity, which requires the `Application` to be `@HiltAndroidApp` or `HiltTestApplication`. `:ui:preferences` is a library module whose `src/main/AndroidManifest.xml` declares no `<application>` at all, there is no `robolectric.properties` anywhere in the repo, and no test carries `@Config(application = …)` — so Robolectric instantiates a bare `android.app.Application`, and `:app` (where `PodcastApp` lives) is not on `:ui:preferences`' test classpath in either direction. A resolved `:ui:preferences:dependencies --configuration playDebugUnitTestRuntimeClasspath` contains **zero** `com.google.dagger:*` and zero `javax.inject` entries. Annotating any slice fragment `@AndroidEntryPoint` breaks 21 to 43 of the 55 tests at fragment-attach time, before a single assertion runs, unless the plan also introduces `hilt-android-testing`, `HiltTestApplication`, `HiltAndroidRule`, `@HiltAndroidTest` and a per-class `@Config(application = …)` into the suite that is supposed to be the untouched equivalence oracle. There is a path that avoids all of it — inject through the `@HiltViewModel` constructor only, hand the fragments their `SynchronizationQueue` via the ViewModel, and leave the fragments non-Hilt — but it has its own cost, and choosing between them is the planner's central decision, not a detail.
+
+### Findings
+
+#### Existing surface
+
+`ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/` — 5 production files:
+
+| File | Kind | Responsibility |
+|---|---|---|
+| `SynchronizationPreferencesFragment.kt` (259 lines) | `AnimatedPreferenceFragment` (→ `PreferenceFragmentCompat`) | The Sync Settings screen. Owns all five preference rows, the provider chooser dialog, and the ActionBar render site |
+| `SynchronizationPreferencesViewModel.kt` (77 lines) | plain `ViewModel` | M17's state holder. `syncStatus: StateFlow<SyncServiceEvent?>` bridge + `uiState: StateFlow<SyncSettingsUiState>` |
+| `GpodderAuthenticationFragment.kt` (293 lines) | `open` `DialogFragment` | 4-step `ViewFlipper` gpodder.net login wizard |
+| `NextcloudAuthenticationFragment.kt` | `DialogFragment` | Nextcloud login flow |
+| `AuthenticationDialog.kt` | `MaterialAlertDialogBuilder` wrapper | Username/password dialog; **subclassed from `:app` by two Java classes** (README convention 1) |
+
+Two module-level types the slice sits inside and must not break: `AnimatedPreferenceFragment` (`ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/AnimatedPreferenceFragment.java:12-27`, Java, abstract, sets `MaterialSharedAxis` transitions in `onCreate` and a `colorSurface` background in `onViewCreated`), and `NotificationPreferencesFragment.java:25`, the module's one other `SynchronizationSettings` consumer.
+
+**`!!` inventory, re-measured** (`grep -o '!!' <file> | wc -l`) — **40 total**, confirming the future-work file's post-Gap-16 figure exactly:
+
+| File | `!!` |
+|---|---|
+| `SynchronizationPreferencesFragment.kt` | 22 |
+| `GpodderAuthenticationFragment.kt` | 11 |
+| `NextcloudAuthenticationFragment.kt` | 7 |
+| `SynchronizationPreferencesViewModel.kt` | 0 |
+| `AuthenticationDialog.kt` | 0 |
+| **Total** | **40** |
+
+#### 1. The M17 ViewModel exactly as it landed
+
+`SynchronizationPreferencesViewModel.kt:19-77`, verbatim shape:
+
+- **Constructor:** `class SynchronizationPreferencesViewModel : ViewModel()` (`:19`) — no parameters, plain `ViewModel`, not `AndroidViewModel`. D2's rationale for avoiding `AndroidViewModel` is load-bearing and survives into this milestone: all string formatting stays in the fragment so `DateUtils.getRelativeDateTimeString` keeps the *Activity* `Context`, not the Application one.
+- **The EventBus bridge** (`:26-34`): `val syncStatus: StateFlow<SyncServiceEvent?> = callbackFlow { … }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(stopTimeoutMillis = 0, replayExpirationMillis = 0), null)`. Both zeros are load-bearing (README convention 15) — `stopTimeoutMillis = 0` prevents deferred unregistration past `onStop`; `replayExpirationMillis = 0` resets to `null` when the last collector stops so a stale previous-session value can't replay.
+- **The subscriber** (`:21-24`): `internal class SyncServiceEventSubscriber(private val onEvent: (SyncServiceEvent) -> Unit)` with `@Subscribe(threadMode = ThreadMode.POSTING, sticky = true)`. `internal`, not `private` — Kotlin `internal` emits `public` bytecode, which EventBus's reflection needs. **This class must not be narrowed to `private`.** `ThreadMode.POSTING` is what makes `register()`'s sticky replay reach `trySend` synchronously on the registering thread.
+- **State** (`:36-37`, `:68-77`): `private val _uiState = MutableStateFlow(SyncSettingsUiState())` exposed as `val uiState: StateFlow<SyncSettingsUiState>`. `SyncSettingsUiState` is a `data class` (`@StringRes titleRes: Int`, `subtitle: SyncSubtitle`); `SyncSubtitle` is a `sealed interface` with `Absent` / `Message(resId)` / `LastSyncReport(successful, attemptedAt)`.
+- **Two synchronous methods**: `onStarted()` (`:39-50`) and `onSyncEvent(event)` (`:52-65`). **Both read `SynchronizationSettings` statics directly** — `isProviderConnected()` `:41`, `isLastSyncSuccessful()` `:43,:58`, `getLastSyncAttempt()` `:44,:59`. Both are plain synchronous functions, not `suspend`. **These five static reads are the seam's actual target inside the ViewModel.**
+- **Coroutines footprint:** the *only* coroutine the ViewModel starts is `stateIn`'s sharing coroutine on `viewModelScope`. There is **no `viewModelScope.launch`** written by hand anywhere in this file, and no `Dispatchers.*` reference at all — the ViewModel touches no dispatcher explicitly. `Dispatchers.IO` appears only in `GpodderAuthenticationFragment.kt:57` (`private var ioDispatcher: CoroutineDispatcher = Dispatchers.IO`, the reflected test seam).
+- **Acquisition — confirmed, no factory:** `SynchronizationPreferencesFragment.kt:33-35`:
+  ```
+  private val viewModel: SynchronizationPreferencesViewModel by lazy {
+      ViewModelProvider(this)[SynchronizationPreferencesViewModel::class.java]
+  }
+  ```
+  The default factory. **No `ViewModelProvider.Factory` implementation exists anywhere in `:ui:preferences`** (grepped). `by viewModels()` is unavailable — the catalog declares the non-`-ktx` `androidx.fragment:fragment 1.8.9` (`libs.versions.toml:26`), wired at `ui/preferences/build.gradle:46`.
+
+**What making it `@HiltViewModel` requires, concretely:** `@HiltViewModel` on the class + `@Inject constructor(...)`, and the acquisition site must resolve `HiltViewModelFactory`. `ViewModelProvider(this)` calls `fragment.getDefaultViewModelProviderFactory()`, which returns the Hilt factory **only if the fragment is `@AndroidEntryPoint`**. So line 33-35 needs **no textual change**, but the fragment above it does — and that is the whole risk (finding 5). `hilt-navigation-fragment` is **not** needed and should not be added: that artifact exists for `by hiltNavGraphViewModels()`, and this repo has no Navigation Component in this module.
+
+#### 2. `SynchronizationQueue` / `SynchronizationQueue.instance` — the mutable global
+
+**Type:** `net/sync/service-interface/src/main/java/de/danoeh/antennapod/net/sync/serviceinterface/SynchronizationQueue.kt:5-31` — an `abstract class` (not an interface) with nine abstract methods (`sync`, `syncImmediately`, `fullSync`, `syncIfNotSyncedRecently`, `clear`, `enqueueFeedAdded`, `enqueueFeedRemoved`, `enqueueEpisodeAction`, `enqueueEpisodePlayed`). The holder is `companion object { @JvmStatic var instance: SynchronizationQueue? = null }` (`:6-9`). `@JvmStatic` on a `var` emits `getInstance()`/`setInstance()` to Java callers — pinned by `net/sync/service-interface/README.md` convention 6, which also warns that convention has **no test guarding it in that module**.
+
+**How it is set, and when.** Exactly one production assignment in the whole repo: `app/src/main/java/de/danoeh/antennapod/ClientConfigurator.java:53` — `SynchronizationQueue.setInstance(new SynchronizationQueueImpl(context));`. `ClientConfigurator.initialize(Context)` (`:32-59`) is `static synchronized`, guarded by a `private static boolean initialized` flag (`:30`, `:33-35`, `:58`), and has exactly one caller: `PodcastApp.onCreate()` → `ClientConfigurator.initialize(this)` (`app/src/main/java/de/danoeh/antennapod/PodcastApp.java:35`). So the lifecycle point is **app process start, inside `Application.onCreate`, after `DynamicColors.applyToActivitiesIfAvailable` and before `PreferenceUpgrader.checkUpgrades`**. The same method also does the `SynchronizationCredentials.init(context)` (`:44`) and `SynchronizationSettings.init(context)` (`:45`) SharedPreferences initialisation the slice depends on, plus twelve other unrelated static initialisations. `ClientConfigurator` is Java, in `:app`, and is out of this milestone's scope to convert.
+
+**`SynchronizationQueueImpl`** — `net/sync/service/src/main/java/de/danoeh/antennapod/net/sync/service/SynchronizationQueueImpl.kt:21`, `class SynchronizationQueueImpl(private val context: Context) : SynchronizationQueue()`. Its methods enqueue WorkManager `OneTimeWorkRequest`s (`:22-38`) and route `fullSync`/`clear` through `LockingAsyncExecutor.executeLockedAsync` (`:40-51`). Constructor takes only a `Context` — which is exactly what a Hilt `@Provides` in a `SingletonComponent` module would supply via `@ApplicationContext`. **But that provider would have to live in `:app`**, because `:net:sync:service` is `implementation project(':net:sync:service')` from `:ui:preferences` (`ui/preferences/build.gradle:42`) and from `:app` (`app/build.gradle`), and the impl type is what a `@Provides` must name.
+
+**`SynchronizationQueueStub`** — `net/sync/service-interface/.../SynchronizationQueueStub.kt:5`, a no-op subclass used by four *other* modules' tests (`net/download/service`'s `DbCleanupTests.java:88`, `DbQueueCleanupAlgorithmTest.java:31`, `DbWriterTest.java:67`; `storage/database`'s `FeedDatabaseWriterTest.java:46`), all via `SynchronizationQueue.setInstance(...)`. Plus `net/sync/service-interface/src/test/.../SynchronizationQueueTest.kt:20,25,31,33,38,40`, which characterizes the static holder itself (save/restore/assertSame/null). **These are outside the slice and are a reason not to remove or change the `instance` holder** — five test classes in three other modules depend on the global existing and being assignable.
+
+**Every read of `.instance` in production — seven, not five.** The task file's carried figure of five is an undercount, and the line numbers have moved:
+
+| # | File:line | Expression | In task file's named 5? |
+|---|---|---|---|
+| 1 | `SynchronizationPreferencesFragment.kt:121` | `SynchronizationQueue.instance!!.syncImmediately()` (sync row) | Yes |
+| 2 | `SynchronizationPreferencesFragment.kt:125` | `…!!.fullSync()` (force-full-sync row) | Yes |
+| 3 | `SynchronizationPreferencesFragment.kt:130` | `…!!.clear()` (logout row) | Yes |
+| 4 | `GpodderAuthenticationFragment.kt:83` | `…!!.clear()` (host step) | Yes |
+| 5 | `GpodderAuthenticationFragment.kt:238` | `…!!.syncImmediately()` (finish step) | Yes |
+| 6 | **`NextcloudAuthenticationFragment.kt:95`** | `…!!.clear()` (`onNextcloudAuthenticated`) | **No — new finding** |
+| 7 | **`NextcloudAuthenticationFragment.kt:99`** | `…!!.fullSync()` (`onNextcloudAuthenticated`) | **No — new finding** |
+
+M17's D4/`:342` recorded the line numbers as `93,97,102` and `79,230`; M17's own cleanup pass shifted them to `121,125,130` and `83,238`. The two Nextcloud sites were never in any milestone's inventory because M17's scope named only the two fragments it converted. **The planner must decide explicitly whether `NextcloudAuthenticationFragment` is in or out of File Scope** — it has no ViewModel, its `onNextcloudAuthenticated` is an interface callback from `nextcloudLoginFlow`, and including it widens the `@AndroidEntryPoint` blast radius by 6 tests (finding 5).
+
+**How `RecordingSynchronizationQueue` overrides it in tests.** `ui/preferences/src/test/.../RecordingSynchronizationQueue.kt:7` — `class RecordingSynchronizationQueue : SynchronizationQueue()`, overriding all nine methods to append a method-name `String` to a `val calls = mutableListOf<String>()`, with an `var onCall: ((String) -> Unit)?` hook (`:11`) that several tests use to capture *ordering* (e.g. reading `SynchronizationSettings.getSelectedSyncProviderKey()` at the moment `clear` is called — `SynchronizationPreferencesFragmentCharacterizationTest.kt:221`, `NextcloudAuthenticationFragmentCharacterizationTest.kt:77`). It is installed by direct global assignment in **eight** test classes' `@Before` and nulled in `@After`: `SyncSettingsHarnessSmokeTest.kt:35,40`; `SynchronizationPreferencesFragmentLifecycleTest.kt:38,44`; `GpodderAuthenticationFragmentCancellationTest.kt:55,61`; `NextcloudAuthenticationFragmentCharacterizationTest.kt:46,51`; `GpodderAuthenticationFragmentAsyncCharacterizationTest.kt:43,49`; `GpodderAuthenticationFragmentCharacterizationTest.kt:48,53`; `SyncSettingsScreenshotCaptureTest.kt:42,47`; `SynchronizationPreferencesFragmentCharacterizationTest.kt:50,55`. **`testImplementation project(':model')` at `ui/preferences/build.gradle:75` exists solely so this class can override `enqueueEpisodePlayed(FeedMedia?, Boolean)`** — a documented M17 deviation (`build.gradle:71-74`).
+
+**The equivalence consequence.** Any seam that stops the production code reading `SynchronizationQueue.instance` also stops `RecordingSynchronizationQueue` from being observed — because the test's *only* installation mechanism is that global. A seam that reads the global by default (e.g. a Hilt `@Provides fun provideQueue(): SynchronizationQueue = SynchronizationQueue.instance!!`) keeps all eight classes working unmodified; a seam that binds `SynchronizationQueueImpl` directly does not.
+
+#### 3. `SynchronizationSettings` / `SynchronizationCredentials` — the Java statics
+
+Both live in `storage/preferences/src/main/java/de/danoeh/antennapod/storage/preferences/`. `:storage:preferences`' README (2 lines) documents no conventions and the module **has no `src/test/` directory at all** — confirmed.
+
+**`SynchronizationSettings.java`** — `public class`, all-static, one `private static SharedPreferences prefs` initialised by `init(Context)`. Full surface: `init`, `isProviderConnected`, `resetTimestamps`, `isLastSyncSuccessful`, `getLastSyncAttempt`, `setSelectedSyncProvider`, `getSelectedSyncProviderKey`, `updateLastSynchronizationAttempt`, `setLastSynchronizationAttemptSuccess`, `getLastSubscriptionSynchronizationTimestamp`, `setLastSubscriptionSynchronizationAttemptTimestamp`, `getLastEpisodeActionSynchronizationTimestamp`, `setLastEpisodeActionSynchronizationAttemptTimestamp` (13 methods) + one `public static final String LAST_SYNC_ATTEMPT_TIMESTAMP`. **No nullability annotations** — `getSelectedSyncProviderKey()` arrives in Kotlin as `String!`.
+
+*Used by the slice:* `isProviderConnected` (`SynchronizationPreferencesViewModel.kt:41`, `SynchronizationPreferencesFragment.kt:65,140`), `isLastSyncSuccessful` (`ViewModel:43,58`), `getLastSyncAttempt` (`ViewModel:44,59`), `getSelectedSyncProviderKey` (`Fragment:232`), `setSelectedSyncProvider` (`Fragment:132`, `GpodderAuthenticationFragment.kt:259`, `NextcloudAuthenticationFragment.kt:91`). **Six of the thirteen methods. The seam only needs those six.**
+
+**Correction: the carried "~10 call sites outside the slice" is an undercount — there are 18 in `src/main`.** Enumerated exactly (`grep -rn 'SynchronizationSettings\.' --include='*.java' --include='*.kt' | grep /src/main/`, excluding the declaring file and the five slice files):
+
+| # | File:line | Method | Module |
+|---|---|---|---|
+| 1 | `ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/NotificationPreferencesFragment.java:25` | `isProviderConnected()` | `:ui:preferences` |
+| 2 | `net/sync/service/src/main/java/de/danoeh/antennapod/net/sync/service/SynchronizationQueueImpl.kt:28` | `getLastSyncAttempt()` | `:net:sync:service` |
+| 3 | `…/SynchronizationQueueImpl.kt:43` | `resetTimestamps()` | `:net:sync:service` |
+| 4 | `…/SynchronizationQueueImpl.kt:54` | `isProviderConnected()` | `:net:sync:service` |
+| 5 | `…/SynchronizationQueueImpl.kt:66` | `isProviderConnected()` | `:net:sync:service` |
+| 6 | `…/SynchronizationQueueImpl.kt:78` | `isProviderConnected()` | `:net:sync:service` |
+| 7 | `…/SynchronizationQueueImpl.kt:90` | `isProviderConnected()` | `:net:sync:service` |
+| 8 | `…/SynchronizationQueueStorage.kt:73` | `resetTimestamps()` | `:net:sync:service` |
+| 9 | `…/SyncService.kt:53` | `updateLastSynchronizationAttempt()` | `:net:sync:service` |
+| 10 | `…/SyncService.kt:71` | `setLastSynchronizationAttemptSuccess(true)` | `:net:sync:service` |
+| 11 | `…/SyncService.kt:75` | `setLastSynchronizationAttemptSuccess(false)` | `:net:sync:service` |
+| 12 | `…/SyncService.kt:120` | `getLastSubscriptionSynchronizationTimestamp()` | `:net:sync:service` |
+| 13 | `…/SyncService.kt:196` | `setLastSubscriptionSynchronizationAttemptTimestamp(…)` | `:net:sync:service` |
+| 14 | `…/SyncService.kt:200` | `getLastEpisodeActionSynchronizationTimestamp()` | `:net:sync:service` |
+| 15 | `…/SyncService.kt:252` | `setLastEpisodeActionSynchronizationAttemptTimestamp(…)` | `:net:sync:service` |
+| 16 | `…/SyncService.kt:351` | `getSelectedSyncProviderKey()` | `:net:sync:service` |
+| 17 | `app/src/main/java/de/danoeh/antennapod/ClientConfigurator.java:45` | `init(context)` | `:app` |
+| 18 | `app/src/main/java/de/danoeh/antennapod/ui/episodeslist/EpisodeMultiSelectActionHandler.java:107` | `isProviderConnected()` | `:app` |
+
+Plus **7 test-source call sites in three other modules** that would also break on a conversion: `net/download/service/.../DbCleanupTests.java:86`, `net/download/service/.../LocalFeedUpdaterTest.java:74`, `net/sync/service/.../SynchronizationQueueStorageTest.java:49,206,210`, `net/sync/service/.../SynchronizationQueueImplTest.java:49,61`. Note `:net:download:service` — named in the carried figure — touches `SynchronizationSettings` **only from test sources** (`init()` ×2), never from `src/main`.
+
+**This strongly reinforces "wrap, do not convert."** 18 production + 7 test call sites across four modules, none of them nullability-annotated, against a module with zero test coverage, is Milestone 19's bill and not this one's.
+
+**`SynchronizationCredentials.java`** — `public abstract class`, all-static. Surface: `init`, `getUsername`/`setUsername`, `getPassword`/`setPassword`, `getDeviceId`/`setDeviceId`, `getHosturl`/`setHosturl`, `clear` (10 methods). Main-source call sites outside the slice: only **6**, all in `:net:sync:service`'s `SyncService.kt:358,359,360,361,365,366,367` (7 reads across 2 constructor calls) plus `ClientConfigurator.java:44` (`init`). Everything else is in the slice: `GpodderAuthenticationFragment.kt:82,84,87,88,90,103,262,263,264`, `SynchronizationPreferencesFragment.kt:110,114,129,167,168`, `NextcloudAuthenticationFragment.kt:94,96,97,98`. **A `SynchronizationCredentials` wrapper is a materially smaller seam than a `SynchronizationSettings` one.**
+
+**The `clear()` → `UserPreferences` coupling, confirmed.** `SynchronizationCredentials.clear()` is `public static synchronized` and its body is `setUsername(null); setPassword(null); setDeviceId(null); UserPreferences.setGpodnetNotificationsEnabled();`. So the seam's `clear()` cannot be modelled as "three SharedPreferences writes" — it pulls in `UserPreferences`, the module's largest Java class, and its side effect is observable: three test classes call `UserPreferences.init(context)` in `@Before` precisely so `clear()` doesn't NPE (`SynchronizationPreferencesFragmentCharacterizationTest.kt:48` and siblings). Any wrapper must delegate to the real `clear()`, not reimplement it.
+
+#### 4. Hilt / KSP infra from Milestone 16
+
+**Catalog** (`gradle/libs.versions.toml`): `hilt = "2.58"` (`:12`), `ksp = "2.3.11"` (`:13`), `coroutines = "1.9.0"` (`:14`), `kotlin = "2.3.20"` (`:3`), `agp = "8.11.0"` (`:2`). Libraries: `hilt-android = com.google.dagger:hilt-android` (`:67`), `hilt-compiler = com.google.dagger:hilt-android-compiler` (`:68`). Plugins: `hilt = com.google.dagger.hilt.android` (`:103`), `ksp = com.google.devtools.ksp` (`:104`). Root `build.gradle:9-10` declares both `apply false`.
+
+**Resolved, verified by `./gradlew -q :app:dependencies --configuration playDebugCompileClasspath`:** `com.google.dagger:hilt-android:2.58`, `hilt-core:{strictly 2.58}`, `dagger:{strictly 2.58}`, `dagger-lint-aar:{strictly 2.58}`, `javax.inject:javax.inject:1`. Coroutines resolve to **1.9.0** everywhere (BOM-aligned, `kotlinx-coroutines-bom:1.9.0`). Lifecycle resolves to **2.9.4** on both `:app`'s compile classpath and `:ui:preferences`' unit-test runtime classpath, upgraded from the catalog's `lifecycle-runtime-compose = "2.8.7"` ref (`libs.versions.toml:7,58-60`) — the same provable-no-op property M17's D8/AC6 relied on. Robolectric **4.16** (`:92`).
+
+**What `@HiltAndroidApp` on `PodcastApp` gives.** `PodcastApp.java:11,14` — the annotation makes the Hilt plugin's bytecode transform reparent `PodcastApp` onto a generated `Hilt_PodcastApp`, and makes `:app` the aggregation point where `DaggerPodcastApp_HiltComponents_SingletonC` is generated. That is the whole of it: it creates the `SingletonComponent` and makes the `Application` a `GeneratedComponentManagerHolder`. **It does nothing for any other module's tests**, and `PodcastApp` is unreachable from `:ui:preferences` (dependency direction is `:app` → `:ui:preferences`, `app/build.gradle` `implementation project(':ui:preferences')`).
+
+**KSP: applied to no module. kapt: used nowhere in the repo.** Grepping every `*.gradle` for `kapt|ksp|hilt|annotationProcessor` returns exactly two `ksp`/`hilt` lines outside `:app` — both the root `apply false` declarations. There is no `kapt` plugin alias in the catalog, no `kotlin-kapt` application, and no `kapt`/`ksp` dependency configuration anywhere. **`:app` processes Hilt with plain javac `annotationProcessor`** (`app/build.gradle:93` `annotationProcessor libs.hilt.compiler`, `:94` `implementation libs.hilt.android`), which works because **`:app` contains zero Kotlin files** (`find app/src -name '*.kt'` → 0) and applies no Kotlin plugin (`app/build.gradle:1-5`: `android.application`, `triplet-play apply false`, `hilt`).
+
+**`ui/preferences/build.gradle` today.** Plugins (`:1-6`): `android.library`, `kotlin.android`, `ktlint`, `kotlin.compose`. `apply from: "../../common.gradle"` and `"../../playFlavor.gradle"` (`:7-8`). `buildFeatures { compose true }` (`:13-15`). Ten project deps including `:net:sync:service-interface` (`:41`) and `:net:sync:service` (`:42`) and `:storage:preferences` (`:36`). Coroutines core/android (`:50-51`), lifecycle runtime-ktx + viewmodel-ktx (`:52-53`), Compose BOM + 4 artifacts (`:54-58`), `annotationProcessor libs.androidx.annotation` (`:44`). Test deps: `junit`, `robolectric`, `androidx.test.core`, `project(':model')` (`:68-75`). A `tasks.withType(Test)` block disabling coroutines stack-trace recovery (`:78-83`).
+
+**What applying Hilt + KSP to `:ui:preferences` requires:**
+1. `alias(libs.plugins.hilt)` in the `plugins` block (bytecode transform for `@AndroidEntryPoint`; also applies the Dagger/Hilt Gradle plugin's `enableAggregatingTask`).
+2. `alias(libs.plugins.ksp)`.
+3. `implementation libs.hilt.android` + `ksp libs.hilt.compiler`. **`annotationProcessor` will not work here** — `:ui:preferences` is Kotlin, and javac annotation processing never sees Kotlin declarations. KSP is therefore forced, not preferred; the pre-research block's "confirm KSP is the intended path" resolves to **yes, it is the only path short of introducing kapt**, which the portfolio has been avoiding and which would be a new plugin and a new catalog alias.
+4. A `hilt { }` block is **not** required for a plain library. `enableAggregatingTask` defaults to `true` on Hilt 2.58, and `enableExperimentalClasspathAggregation` is not needed given `:app` is the only aggregation target. **`hilt { enableTransformForLocalTests = true }` is the one flag worth evaluating** — it exists precisely for Robolectric unit tests of `@AndroidEntryPoint` classes, and finding 5 is why.
+5. Because `:ui:preferences` applies `playFlavor.gradle`, the KSP configurations are flavoured too (`kspFreeDebug`/`kspPlayDebug`/…); a bare `ksp` configuration covers all variants and is the right choice.
+
+**`@AndroidEntryPoint` precedent: none anywhere.** Grepping `@AndroidEntryPoint|@HiltViewModel|@Inject|javax.inject|dagger\.` across every `.java`/`.kt` in the repo returns exactly two lines, both in `PodcastApp.java` (the import and the `@HiltAndroidApp`). `app-wearos` has no Hilt at all. **There is no precedent to copy, in this repo, for any part of this milestone's graph.**
+
+**`PreferenceFragmentCompat` + Hilt field injection — the known friction, checked.** Two things in the pre-research framing need correcting and one confirming:
+- **Correction: `PreferenceActivity.java:75` is `prefFragment = new SynchronizationPreferencesFragment();` — a direct constructor call, not reflective instantiation.** (`app/src/main/java/de/danoeh/antennapod/ui/screen/preferences/PreferenceActivity.java:63-88`, an if/else-if ladder over `R.xml.*` returning a `PreferenceFragmentCompat`.) The fragment *is* still reflectively re-instantiated by `FragmentManager`/`FragmentFactory` on configuration change and state restore, so the "must stay `public` with a no-arg constructor" rule holds — but for a different reason than stated. This matters because **Hilt does not use constructor injection for fragments**; `@AndroidEntryPoint` field-injects in the generated `onAttach`, so reflective no-arg instantiation is fully compatible. That half is a non-issue.
+- **Confirmed and real: the host-Activity requirement.** `@AndroidEntryPoint` on a Fragment throws at `onAttach` unless the host Activity is itself `@AndroidEntryPoint`. In production that host is `PreferenceActivity` (`:app`, Java, extends `ToolbarActivity`) — annotating it is cheap since `:app` already has the Hilt plugin and a javac processor. But `PreferenceActivity` hosts **ten** preference fragments (`:63-88`), so annotating it is a `:app` scope expansion, and `MainPreferencesFragment` (`:51`) and `onSearchResultClicked` (`:149-160`) also route through it.
+- **Confirmed and real: `AnimatedPreferenceFragment` is Java and abstract.** `@AndroidEntryPoint` must go on the concrete `SynchronizationPreferencesFragment`, and the Hilt transform will insert `Hilt_SynchronizationPreferencesFragment` between it and `AnimatedPreferenceFragment`. That is supported, but it means the generated superclass sits above a Java class in a *different* source set of the same module — a configuration this repo has never built.
+
+**One more Hilt/AGP interaction worth naming:** `common.gradle` sets `lint { warningsAsErrors true; abortOnError true; checkGeneratedSources = true }` and `tasks.withType(JavaCompile) { options.compilerArgs = ["-Xlint:all,-deprecation,-serial,-this-escape,-unchecked,-processing,-classfile", "-Werror"] }`. `checkGeneratedSources = true` means **Android Lint will inspect Hilt's generated code**, with warnings promoted to errors and no lint baseline anywhere in the repo (`find . -name 'lint-baseline*.xml'` → none). This is a plausible, unverified source of a red `./gradlew lint` on the first Hilt-generating module, and the plan should treat "lint passes on generated Hilt code" as a step to verify, not assume.
+
+#### 5. The test suite — 55 tests, and the single biggest risk in this milestone
+
+**Re-measured** in `ui/preferences/src/test/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/`: **15 files, 11 test classes, 55 `@Test`** — the total matches the carried figure; the file count does not. The task file and checkpoint say "11 test files"; that is 11 *test classes* plus **4 support files** (`RecordingSynchronizationQueue.kt`, `SyncSettingsTestHost.kt`, `SyncSettingsCaptureHost.kt`, and `FakeGpodnetService.kt` — the last added by M17 and not in any carried inventory).
+
+| Test class | `@Test` | Attaches | Host activity |
+|---|---|---|---|
+| `GpodderAuthenticationFragmentCharacterizationTest.kt` | 9 | `GpodderAuthenticationFragment`, `TestableGpodderAuthenticationFragment` | `SyncSettingsTestHost` |
+| `SynchronizationPreferencesFragmentCharacterizationTest.kt` | 8 | `SynchronizationPreferencesFragment` | `SyncSettingsTestHost` |
+| `SynchronizationPreferencesViewModelTest.kt` | 7 | — (ViewModel only) | none |
+| `GpodderAuthenticationFragmentAsyncCharacterizationTest.kt` | 6 | `GpodderAuthenticationFragment` | `SyncSettingsTestHost` |
+| `NextcloudAuthenticationFragmentCharacterizationTest.kt` | 6 | `NextcloudAuthenticationFragment` | `SyncSettingsTestHost` |
+| `SyncSettingsHarnessSmokeTest.kt` | 6 | all three fragments | `SyncSettingsTestHost` |
+| `AuthenticationDialogCharacterizationTest.kt` | 4 | — (dialog) | `SyncSettingsTestHost` |
+| `SynchronizationPreferencesFragmentLifecycleTest.kt` | 4 | `SynchronizationPreferencesFragment` | `SyncSettingsTestHost` |
+| `SyncSettingsScreenshotCaptureTest.kt` | 3 | `SynchronizationPreferencesFragment` | `SyncSettingsCaptureHost` |
+| `AuthenticationDialogJavaInteropTest.java` | 1 | — (dialog) | `SyncSettingsTestHost` |
+| `GpodderAuthenticationFragmentCancellationTest.kt` | 1 | `GpodderAuthenticationFragment` | `SyncSettingsTestHost` |
+| **Total** | **55** | | |
+
+**How each installs `RecordingSynchronizationQueue`:** eight classes assign the global in `@Before` and null it in `@After` (exact lines in finding 2). Two of them (`SynchronizationPreferencesFragmentCharacterizationTest`, `NextcloudAuthenticationFragmentCharacterizationTest`, `GpodderAuthenticationFragmentCharacterizationTest`) keep a `private lateinit var recordingQueue` field and assert on `recordingQueue.calls` / hook `onCall` for ordering.
+
+**How each reads the preference statics:** all eleven classes except `AuthenticationDialogCharacterizationTest`, `AuthenticationDialogJavaInteropTest` call `SynchronizationSettings.init(context)` in `@Before` with `context = RuntimeEnvironment.getApplication()`; ten also call `SynchronizationCredentials.init(context)` and/or `UserPreferences.init(context)`. Direct static reads/writes are dense — 16 `SynchronizationCredentials.*` references in `SynchronizationPreferencesFragmentCharacterizationTest.kt` alone, 18 in `GpodderAuthenticationFragmentCharacterizationTest.kt`. **The tests are written against the globals by design (M15 D6). Any seam that redirects production reads away from the globals without also redirecting the test's writes silently decouples the oracle from the code it is supposed to be proving.**
+
+**Robolectric + custom `Application`: none, and this is the crux.**
+- No `robolectric.properties` exists anywhere in the repo.
+- No test carries `@Config(application = …)`. The only `@Config` in the source set is `SyncSettingsScreenshotCaptureTest.kt:31` — `@Config(sdk = [34], qualifiers = "w411dp-h891dp-xhdpi")`, no application.
+- `ui/preferences/src/main/AndroidManifest.xml` is a bare `<manifest>` with no `<application>` element; there is no `src/test/AndroidManifest.xml`.
+- ⇒ Robolectric instantiates plain `android.app.Application`.
+- `./gradlew -q :ui:preferences:dependencies --configuration playDebugUnitTestRuntimeClasspath` contains **no `com.google.dagger:*` and no `javax.inject`** — verified by grep over the full 
+resolved tree.
+
+**What breaks if the fragments become `@AndroidEntryPoint`.** At `Fragment.onAttach`, Hilt's generated superclass calls `Preconditions.checkNotNull(componentContext instanceof GeneratedComponentManagerHolder)` on the host Activity, and the Activity's own component manager walks up to the `Application` expecting a `GeneratedComponentManagerHolder`. Both fail here: `SyncSettingsTestHost : AppCompatActivity()` / `SyncSettingsCaptureHost : ToolbarActivity()` are plain, and the `Application` is plain. The failures are per-test-class, at attach, before any assertion:
+
+| If annotated | Test classes broken | `@Test` broken |
+|---|---|---|
+| `SynchronizationPreferencesFragment` only | 4 (`…CharacterizationTest`, `…LifecycleTest`, `SyncSettingsHarnessSmokeTest`, `SyncSettingsScreenshotCaptureTest`) | **21** |
+| + `GpodderAuthenticationFragment` | +3 | **37** |
+| + `NextcloudAuthenticationFragment` | +1 | **43** |
+
+Untouched in every case: `SynchronizationPreferencesViewModelTest` (7), `AuthenticationDialogCharacterizationTest` (4), `AuthenticationDialogJavaInteropTest` (1) = 12.
+
+**Is there a path that keeps all 55 green and unmodified?** Two candidates, and they are not equally good — the planner must pick one and record why:
+
+- **(A) No `@AndroidEntryPoint` at all.** Keep the fragments non-Hilt. Keep `ViewModelProvider(this)[…]` on the default factory. Introduce the seam as a plain Kotlin interface (e.g. `SyncSettingsRepository`) with a default implementation that delegates to the statics and to `SynchronizationQueue.instance`, and give the ViewModel a *second*, `@VisibleForTesting`-shaped constructor or a default-argument constructor. **This keeps all 55 tests byte-identical and green**, because nothing about fragment attachment changes and the default implementation still reads the same globals the tests write. Its cost is honest and should be stated plainly: **it is dependency inversion without Hilt**, and the actual Hilt graph it exercises is small or zero. If the milestone is billed as `di`, delivering a seam with no `@HiltViewModel` needs to be an argued decision, not a quiet retreat.
+- **(B) `@HiltViewModel` on the ViewModel + `@AndroidEntryPoint` on `SynchronizationPreferencesFragment` only, with `@AndroidEntryPoint` on `PreferenceActivity` in `:app`, plus Hilt test infrastructure in `:ui:preferences`.** This is the real `di` deliverable. It requires: a new `hilt-android-testing` catalog entry (**absent today**), `kspTest libs.hilt.compiler`, `hilt { enableTransformForLocalTests = true }`, and — added to **4 of the 11 test classes** — `@HiltAndroidTest`, `@Config(application = HiltTestApplication::class)`, a `@get:Rule HiltAndroidRule`, and `@AndroidEntryPoint` on `SyncSettingsTestHost`/`SyncSettingsCaptureHost` (which live in the test source set, so annotating them is a test-infra edit, not a production one). **21 tests' *class-level annotations* change; their bodies need not.** Whether that counts as "rewriting the regression net" is a judgement call the planner has to make explicitly — my read is that a class-level annotation + rule that changes no assertion and no arrange/act step is materially different from rewriting a test, but it is not *nothing*, and the future-work file's rule (`:88-94`) does not carve out an exception for it.
+
+**Neither option is free, and there is no third option in which `@HiltViewModel` works without Hilt test infrastructure.** That is the finding to flag hardest.
+
+#### 6. `kotlinx-coroutines-test` and Turbine — still absent; and the seam may not force them
+
+**Confirmed absent from the catalog.** `grep -inE 'coroutines-test|turbine|hilt.*test|mockwebserver|mockk' gradle/libs.versions.toml` → **no matches**. `mockito-core` is catalogued (`:93`) but declared on no module's `:ui:preferences` test configuration.
+
+**What M17 does instead** — recorded as `ui/preferences/README.md` convention 16 and visible in the code: determinism from single-threadedness, not a framework. `SynchronizationPreferencesViewModelTest.kt:47-53` starts collectors with `CoroutineScope(Dispatchers.Main.immediate).launch { … }` and pumps with `shadowOf(Looper.getMainLooper()).idle()` (`:45`), tracking `Job`s in a list cancelled in `@After` (`:39-42`). `GpodderAuthenticationFragment.kt:57` exposes `private var ioDispatcher: CoroutineDispatcher = Dispatchers.IO`, set by reflection to `Dispatchers.Unconfined` in the async tests and to a hand-written `ManualDispatcher` in `GpodderAuthenticationFragmentCancellationTest`. No `runTest`, no `TestDispatcher`, no `Dispatchers.setMain` anywhere.
+
+**Which M18 test would need `runTest` — and whether a `suspend` read is actually forced.** It is **not** forced. Every read the seam wraps is a synchronous `SharedPreferences` getter (`getBoolean`/`getLong`/`getString` — see `SynchronizationSettings.java` in full above) and a synchronous `SynchronizationQueue` method call. `MutableStateFlow.value` assignment is synchronous. The ViewModel's `onStarted()`/`onSyncEvent()` (`SynchronizationPreferencesViewModel.kt:39-65`) are plain functions today and there is no I/O behind them to move off the main thread — `SharedPreferences` reads hit an in-memory map after the first load. **Making the repository's reads `suspend` would be a design choice, not a requirement**, and it would be a behavior change: `render()` currently observes state written synchronously inside `onStart()` before `onStart()` returns, which is what `SynchronizationPreferencesFragmentLifecycleTest.testStickyEventReplaysOnStart` and `testOnStartSetsTitleAndOnStopSetsEmptySubtitleWhereasDisconnectedSetsNull` discriminate on (M17 D7). A `suspend` read introduces a suspension point between `onStart()` and the first render.
+
+So: **if the seam stays synchronous, `kotlinx-coroutines-test` is not needed and the M17 determinism story carries over unchanged.** The carried assumption ("becomes genuinely necessary here") rests on a premise — a suspending repository read — that this milestone is free to decline. Turbine is likewise unnecessary: the one stream-shape assertion in the suite (`testConsecutiveEventsWithSameMessageResIdAreBothDelivered`) already collects into a list without it. **Recommend deciding "synchronous seam, no new test dependency" and recording it, rather than cataloguing a library to satisfy an inherited expectation.** If Hilt test infra lands (finding 5, option B), `hilt-android-testing` is the catalog entry that actually gets earned — not `coroutines-test`.
+
+#### Track-specific findings — `di`
+
+1. **KSP/kapt ordering with the existing Kotlin setup.** KSP 2.3.11 pairs with Kotlin 2.3.20 (M16 proved the pairing with a reverted probe). Applying `ksp` to `:ui:preferences` inserts `kspFreeDebugKotlin`/`kspPlayDebugKotlin` tasks before `compileFreeDebugKotlin`. `:ui:preferences` already applies `kotlin.compose` (`build.gradle:5`) and has `compose true`; the Compose compiler plugin and KSP coexist normally, but this module would be the first in the repo to run both. The existing `annotationProcessor libs.androidx.annotation` (`:44`) stays — it processes Java sources only and does not conflict.
+2. **Mixed processors across the module boundary — the one genuinely unverified interaction.** `:app` processes Hilt with **javac `annotationProcessor`** (`app/build.gradle:93`) because it is pure Java; `:ui:preferences` must process it with **KSP** because it is Kotlin. Hilt aggregates across modules through `@AggregatedRoot`/`@InstallIn` metadata written into class files, which the app's processor reads — so this is *expected* to work, but nothing in this repo has ever exercised it and the Hilt docs steer toward a single processor per project. **The plan must verify this empirically at the earliest possible step, not assume it.** The fallback if it fails is applying `kotlin-android` + KSP to `:app` (large) or moving `:app` to kapt (contrary to the portfolio's direction) — both expensive enough that discovering the failure late would be costly.
+3. **Hilt 2.58 vs AGP 8.11.0.** 2.58 is the last line that does not require AGP 9.0.0 (M16's D2 finding, and the reason for the step-down). Resolution re-verified above: `dagger`, `hilt-core`, `hilt-android`, `dagger-lint-aar` all `strictly 2.58`, `javax.inject:1`. **`dagger-lint-aar` is on the compile classpath**, which combined with `common.gradle`'s `lint { warningsAsErrors true; checkGeneratedSources true }` and no lint baseline is a plausible first-red-build source (see finding 4).
+4. **`@HiltViewModel` retrieval without Compose — answered.** `hilt-navigation-fragment` is **not** required and should not be added; it exists for `by hiltNavGraphViewModels()` and this module has no Navigation Component. `by viewModels()` is unavailable (`androidx.fragment:fragment`, not `-ktx`, `libs.versions.toml:26`). The correct mechanism is the one already in the file: `ViewModelProvider(this)[SynchronizationPreferencesViewModel::class.java]` (`SynchronizationPreferencesFragment.kt:34`) resolves `HiltViewModelFactory` automatically through `getDefaultViewModelProviderFactory()` — **but only when the fragment is `@AndroidEntryPoint`.** So the ViewModel-acquisition line needs zero change and the fragment annotation is doing all the work.
+5. **Multi-module Hilt component hierarchy.** `:ui:preferences` is an Android *library*. Its `@AndroidEntryPoint` classes and `@HiltViewModel` do not generate a component — they generate `@InstallIn`-targeted metadata that `:app`'s `@HiltAndroidApp` aggregation compiles into `SingletonComponent`/`ActivityComponent`/`FragmentComponent`/`ViewModelComponent`. Consequences: (a) a `@Module @InstallIn(SingletonComponent::class)` providing `SynchronizationQueue` can live in `:ui:preferences` and still be seen by `:app`; (b) if it instead provides `SynchronizationQueueImpl`, the module must be able to *name* that type, which `:ui:preferences` can (`implementation project(':net:sync:service')`, `build.gradle:42`) — but binding the impl bypasses `ClientConfigurator`'s single assignment and would give the app two live `SynchronizationQueueImpl` instances unless `ClientConfigurator.java:53` is also changed, which is `:app` scope; (c) the safest provider for equivalence is one that returns `SynchronizationQueue.instance!!`, which keeps `ClientConfigurator` as the single owner and keeps `RecordingSynchronizationQueue` observable — at the cost of the graph being a thin façade over the global rather than replacing it.
+6. **`:app` does not need a new `@HiltAndroidApp`** — `PodcastApp` already has it. Whether `:app` needs an `@AndroidEntryPoint` on `PreferenceActivity` depends entirely on finding 5's option choice. `:app`'s own test source set (`app/build.gradle`: `junit`, `robolectric`, `androidx.test.core`) contains no fragment-attach tests for the preferences screens, so annotating `PreferenceActivity` is unlikely to break `:app` tests — but that should be verified, not assumed.
+7. **Nothing in the slice is `@Volatile`-safe for a graph.** `SynchronizationQueue.instance` is a plain `var` with no synchronisation; `ClientConfigurator.initialize` is `synchronized` but the field's reads are not. This is pre-existing and out of scope, but it is worth naming: a Hilt `@Provides` that reads `SynchronizationQueue.instance!!` inherits that unsynchronised read, it does not fix it.
+
+#### Current test coverage
+
+The 55-test suite is described in full in finding 5. What it actually *asserts*, relative to this milestone's changes:
+
+| Behavior this milestone touches | Pinned by | Strength |
+|---|---|---|
+| The three preference-row click listeners call `syncImmediately`/`fullSync`/`clear` on the installed queue | `SynchronizationPreferencesFragmentCharacterizationTest` via `recordingQueue.calls` (`:50`, `:221`, `:233`) | **Executable, strong** — and it asserts *ordering* against `SynchronizationSettings` writes via the `onCall` hook |
+| Gpodder host step clears credentials + queue before setting host URL | `GpodderAuthenticationFragmentCharacterizationTest` (`:48`, `:179`, `:200`) | **Executable, strong** |
+| Gpodder finish step dismisses before syncing | `GpodderAuthenticationFragmentCharacterizationTest.testFinishStepDismissesBeforeSyncing` | **Executable, strong** |
+| Nextcloud `onNextcloudAuthenticated` clear-then-fullSync ordering | `NextcloudAuthenticationFragmentCharacterizationTest` (`:46`, `:77`, `:95`) | **Executable, strong** |
+| ViewModel `onStarted()`/`onSyncEvent()` reading `SynchronizationSettings` | `SynchronizationPreferencesViewModelTest` (`:143-158`) — writes the statics, asserts `uiState.value` | **Executable, strong** |
+| `onStart`/`onStop` ActionBar ordering and sticky replay | `SynchronizationPreferencesFragmentLifecycleTest` (4 tests, `:60-121`) | **Executable, strong** |
+| Screen renders no pixel change | `SyncSettingsScreenshotCaptureTest` (3 tests, `@GraphicsMode(NATIVE)`) | Executable; writes PNGs under `build/`, never byte-compared |
+
+**This is a genuinely strong regression net for a DI seam** — much stronger than M17 inherited, because every queue interaction and every settings read the seam would wrap is already observed through a test double or a real SharedPreferences write. That is the good news, and it is why "keep it green and unmodified" is a realistic bar rather than an aspiration.
+
+#### Characterization-test gaps
+
+Behavior with **zero** coverage today that this milestone's changes could break silently:
+
+1. **`ClientConfigurator.initialize`'s ordering and its `initialized` guard.** Nothing tests it. If a Hilt provider ever needs `SynchronizationQueue.instance` before `ClientConfigurator` has run (an `@Inject` into an earlier-constructed object, or an eager `@Singleton`), the `!!` throws with no test anywhere to catch the regression. `:app` has no test for `PodcastApp.onCreate` either.
+2. **`SynchronizationQueue.instance` being `null`.** Every test in the slice installs a non-null queue in `@Before`. The production-realistic "not yet initialised" state is never exercised — so a provider that changes *when* the global is read (eagerly at graph construction vs lazily at click time) is not observable by any test. **If the seam changes read timing, that needs a new test, written before the change.**
+3. **`@AndroidEntryPoint`'s effect on `AnimatedPreferenceFragment`'s `onCreate`/`onViewCreated`.** The generated `Hilt_` superclass overrides `onAttach` and `getContext`/`getDefaultViewModelProviderFactory`. Nothing asserts the `MaterialSharedAxis` transitions (`AnimatedPreferenceFragment.java:16-19`) or the `colorSurface` background (`:25`) survive. `SyncSettingsScreenshotCaptureTest` would catch a background change but only via a distinct-colour-count assertion, not exactly.
+4. **`PreferenceActivity`'s ten-fragment ladder and `onSearchResultClicked`** (`PreferenceActivity.java:63-88`, `:149-160`). If option B annotates `PreferenceActivity`, nine other preference fragments are affected and none of them have tests in `:app` or `:ui:preferences`. `MainPreferencesFragment`'s search indexing of `preferences_synchronization.xml` is likewise untested.
+5. **`SynchronizationCredentials.clear()`'s `UserPreferences.setGpodnetNotificationsEnabled()` side effect** is never asserted — the tests call `UserPreferences.init` so it doesn't throw, but no test observes the notification flag flipping. A wrapper that reimplements `clear()` instead of delegating would pass the whole suite.
+6. **`NextcloudAuthenticationFragment`'s two `SynchronizationQueue.instance!!` sites** *are* covered (`NextcloudAuthenticationFragmentCharacterizationTest`, 6 tests) — this one is **not** a gap, and is listed here only to close the question.
+
+Gaps 1, 2, 3 and 5 should be written **before** any seam lands, not after.
+
+#### Track prerequisites
+
+- **`di` — prerequisites MET, with one qualification.** The track "prefers `kotlin` done first on this module"; the slice is 100% Kotlin as of M15 (`ui/preferences/README.md`, conventions 1-4) and the ViewModel layer exists as of M17, so the seam has somewhere to land. Hilt 2.58 and KSP 2.3.11 are catalogued and version-verified against AGP 8.11.0 / Kotlin 2.3.20. **The qualification:** the graph's aggregation point is `:app`, which is a **pure-Java module using javac `annotationProcessor` for Hilt** while `:ui:preferences` must use KSP. That cross-processor arrangement is expected to work but is **unproven in this repo**, and it is the one prerequisite I cannot certify from static inspection. It is not a blocking gap — it is a gate the plan must place at its earliest verifiable step so a failure is cheap.
+
+No other track is requested for Milestone 18. For the record, since the sequence continues: `compose` (Milestone 20) still has its `kotlin`-done and ViewModel-present prerequisites satisfied, and its Paparazzi question remains open per the future-work file.
+
+### Unknowns
+
+The planner must resolve these before ordering steps. (a)-(f) are the ones named in the brief; 7-10 are additional and, in my read, 7 and 8 outrank several of the named ones.
+
+1. **(a) Where does the seam live, and what does it cost in test source sets?** Three options. **In `:storage:preferences`** — gives that module its first test source set and its first Kotlin file, and the interface would sit next to the statics it wraps; costs a new test configuration in a module with zero test infrastructure. **In `:ui:preferences`** — zero new module, zero new test source set, the interface lives beside its only consumer; costs the seam being screen-local rather than reusable, which is arguably correct for an à-la-carte `di` milestone touching one slice. **A new small interface module** — cleanest boundary, most build churn, and `settings.gradle` + a new README. **My read: `:ui:preferences`.** It is the only option that adds no new test source set and no new module while the regression net is being asked to hold still.
+2. **(b) How do the fragments get `SynchronizationQueue`?** Via the ViewModel (only works for `SynchronizationPreferencesFragment`; `GpodderAuthenticationFragment` and `NextcloudAuthenticationFragment` have no ViewModel and creating one for them is M20 scope per M17 D3), via `@AndroidEntryPoint` field injection (breaks 37-43 tests without Hilt test infra), or via an `@EntryPoint` + `EntryPointAccessors.fromApplication(...)` (which **also** requires a Hilt `Application` and so fails in `:ui:preferences` Robolectric exactly the same way). **There is no mechanism that injects into a non-`@AndroidEntryPoint` fragment in this test environment.** So the two dialog fragments' four `!!` sites either come with the full test-infra change or stay.
+3. **(c) Is a test-infra change unavoidable, and how is it kept out of the "don't rewrite the regression net" rule?** Only if `@AndroidEntryPoint` is used. If it is, the minimum change is class-level (`@HiltAndroidTest`, `@Config(application = HiltTestApplication::class)`, `HiltAndroidRule`) plus `@AndroidEntryPoint` on the two test host activities — **no test body, no arrange step, no assertion changes**. The planner should decide and record whether that counts as rewriting; my read is that it does not, but the future-work file's rule (`:88-94`) is written absolutely and should be amended deliberately rather than reinterpreted quietly. A concrete mitigation: land the test-infra annotations as their own step, with the suite green before and after and **zero production changes in that step's diff**, so the annotation change is provably behavior-neutral before the seam lands.
+4. **(d) Synchronous seam or `suspend`?** Finding 6 argues nothing forces `suspend`: every wrapped read is a synchronous SharedPreferences getter, and introducing a suspension point between `onStart()` and the first `render()` is a behavior change two frozen lifecycle tests discriminate on. **Recommend synchronous, and therefore no `kotlinx-coroutines-test` and no Turbine.** That declines an inherited expectation, so it needs to be an argued Resolved Decision, not a silent omission.
+5. **(e) Does `:app` get a Hilt test application, and does it ripple?** `:app`'s own test source set is small (`junit`, `robolectric`, `androidx.test.core`) and has no preference-fragment attach tests, so annotating `PreferenceActivity` probably ripples nowhere — **but that is an inference from dependency declarations, not a measurement**, and the plan should verify it by running `:app:testPlayDebugUnitTest` before and after. `:ui:preferences` is where `HiltTestApplication` would actually be needed, not `:app`.
+6. **(f) Is `@AndroidEntryPoint` needed at all?** Strictly: **no** — a plain interface seam with a hand-written default that reads the globals delivers dependency inversion, kills up to seven `!!` sites, and keeps all 55 tests byte-identical. But it delivers **no Hilt graph**, and this milestone is billed as writing the repo's first one. This is the milestone's central scoping decision and it has a commercial dimension (what "the `di` track" means as a deliverable), so per this repo's rules it is worth surfacing to José rather than settling inside the plan.
+7. **Which fragments are in File Scope?** `NextcloudAuthenticationFragment`'s two `.instance!!` sites (`:95`, `:99`) were in no prior inventory. Including it adds 6 tests to the `@AndroidEntryPoint` blast radius and one more file to the diff; excluding it means the milestone ships with the slice's `.instance!!` count reduced from 7 to 2 rather than to 0, and the future-work file should be updated to say so.
+8. **What does the provider actually return?** `SynchronizationQueue.instance!!` (keeps `ClientConfigurator` the single owner, keeps `RecordingSynchronizationQueue` observable, but leaves the global in place — the graph becomes a façade) or `SynchronizationQueueImpl(context)` (a real binding, but creates a second instance unless `ClientConfigurator.java:53` also changes, and instantly breaks all eight test classes' `RecordingSynchronizationQueue` installation). **These have opposite equivalence properties and the choice determines whether the milestone can claim it replaced the singleton pattern or merely wrapped it.**
+9. **Does the cross-processor Hilt arrangement (javac in `:app`, KSP in `:ui:preferences`) actually build?** Unproven in this repo (track-specific finding 2). Needs to be the plan's earliest gate.
+10. **Does `./gradlew lint` survive Hilt-generated code?** `checkGeneratedSources = true`, `warningsAsErrors true`, `abortOnError true`, no baseline anywhere, and `dagger-lint-aar:2.58` on the classpath. Unverified. Cheap to check early, expensive to discover at the CI bar.
+
+### Sources
+
+- `git fetch origin`; `git rev-parse origin/develop` → `b8eda5b674f00b0fa7df1ffc2a5283510a4a6e4a`; `git merge-base --is-ancestor {f5d4c5551,45904a410,8e4c29217,cfe560cb0,b8eda5b67} origin/develop` → all true; `git diff HEAD origin/develop` → empty; `git status --short` → 4 untracked paths
+- `tasks/antennapod-sync-settings-di-milestone-18.md:7-21` (pre-research context block)
+- `tasks/antennapod-sync-settings-modernization-future-work.md:66-94` (Milestone 18), `:96-97` (Milestone 19), `:99-121` (Milestone 20), `:123-127` (standing conventions)
+- `tasks/antennapod-sync-settings-concurrency-mvvm-milestone-17.md:305-321` (D2), `:338-342` (D4), `:346-388` (D5), `:475-488` (D9), `:324-334` (D3), `:1188-1628` (Implementation Notes)
+- `AGENTS.md` (module map, build/test commands, PR conventions, no-commits-on-develop)
+- `ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SynchronizationPreferencesViewModel.kt:19` (constructor), `:21-24` (`internal SyncServiceEventSubscriber`, `ThreadMode.POSTING`, `sticky = true`), `:26-34` (`callbackFlow`/`stateIn`/`WhileSubscribed(0,0)`), `:31` (`viewModelScope`), `:36-37` (`_uiState`/`uiState`), `:39-50` (`onStarted`, static reads at `:41,43,44`), `:52-65` (`onSyncEvent`, static reads at `:58,59`), `:68-77` (`SyncSettingsUiState`, `SyncSubtitle`)
+- `…/SynchronizationPreferencesFragment.kt:33-35` (`ViewModelProvider(this)[…]`, no factory), `:45-55` (`onStart`), `:57-62` (`onStop`), `:64-70` (`syncStatusChanged`), `:73` (`actionBar()`), `:75-99` (`render`), `:121,125,130` (`SynchronizationQueue.instance!!`), `:110,114,129,167,168` (`SynchronizationCredentials`), `:65,132,140,232` (`SynchronizationSettings`)
+- `…/GpodderAuthenticationFragment.kt:39` (`open`), `:47-55` (`@Volatile` ×3, `devices` without), `:57` (`ioDispatcher` seam), `:83,238` (`SynchronizationQueue.instance!!`), `:82,84,87,88,90,103,262,263,264` (`SynchronizationCredentials`), `:142` (Gap 16 fixed form), `:259` (`SynchronizationSettings`)
+- `…/NextcloudAuthenticationFragment.kt:90-105` (`onNextcloudAuthenticated`), `:95,99` (**two previously-uninventoried `SynchronizationQueue.instance!!` sites**), `:91,94,96,97,98`
+- `…/screen/AnimatedPreferenceFragment.java:12-27` ; `…/screen/NotificationPreferencesFragment.java:25`
+- `net/sync/service-interface/src/main/java/de/danoeh/antennapod/net/sync/serviceinterface/SynchronizationQueue.kt:5-31` (`abstract class`, `@JvmStatic var instance`) ; `SynchronizationQueueStub.kt:5`
+- `net/sync/service/src/main/java/de/danoeh/antennapod/net/sync/service/SynchronizationQueueImpl.kt:21` (`(Context)` constructor), `:22-51`
+- `app/src/main/java/de/danoeh/antennapod/ClientConfigurator.java:29-59` (`initialized` guard `:30,33-35,58`; `SynchronizationCredentials.init` `:44`; `SynchronizationSettings.init` `:45`; **`SynchronizationQueue.setInstance` `:53`**)
+- `app/src/main/java/de/danoeh/antennapod/PodcastApp.java:11,14` (`@HiltAndroidApp`), `:35` (`ClientConfigurator.initialize(this)` — the only caller)
+- `app/src/main/java/de/danoeh/antennapod/ui/screen/preferences/PreferenceActivity.java:31` (`extends ToolbarActivity`), `:51` (`MainPreferencesFragment`), `:63-88` (ten-fragment ladder), **`:75`** (`new SynchronizationPreferencesFragment()` — a direct constructor call, **not** reflective), `:117-118` (`openScreen`), `:149-160` (`onSearchResultClicked`)
+- `storage/preferences/src/main/java/de/danoeh/antennapod/storage/preferences/SynchronizationSettings.java` (all 13 statics, no nullability annotations) ; `SynchronizationCredentials.java` (all 10 statics; `clear()` → `UserPreferences.setGpodnetNotificationsEnabled()`)
+- `grep -rn 'SynchronizationSettings\.' --include='*.java' --include='*.kt' | grep /src/main/` → 18 sites outside the slice (enumerated in finding 3) ; test-source sites at `net/download/service/.../DbCleanupTests.java:86`, `.../LocalFeedUpdaterTest.java:74`, `net/sync/service/.../SynchronizationQueueStorageTest.java:49,206,210`, `.../SynchronizationQueueImplTest.java:49,61`
+- `gradle/libs.versions.toml:2` (agp 8.11.0), `:3` (kotlin 2.3.20), `:7` (lifecycle-runtime-compose 2.8.7), `:12` (hilt 2.58), `:13` (ksp 2.3.11), `:14` (coroutines 1.9.0), `:26` (`androidx.fragment:fragment`, non-ktx), `:67-68` (hilt-android/hilt-compiler), `:92` (robolectric 4.16), `:93` (mockito-core), `:103-104` (hilt/ksp plugin aliases). **No `coroutines-test`, no Turbine, no `hilt-android-testing`, no MockWebServer, no mockk** (verified by grep)
+- `build.gradle:9-10` (hilt + ksp `apply false` at root)
+- `app/build.gradle:1-5` (plugins — **no `kotlin.android`**), `:93` (`annotationProcessor libs.hilt.compiler`), `:94` (`implementation libs.hilt.android`) ; `find app/src -name '*.kt'` → **0 files**
+- `ui/preferences/build.gradle:1-8` (plugins, `playFlavor.gradle`), `:13-15` (`compose true`), `:36,41,42` (`:storage:preferences`, `:net:sync:service-interface`, `:net:sync:service`), `:44` (`annotationProcessor libs.androidx.annotation`), `:46` (`androidx.fragment`), `:50-53` (coroutines + lifecycle), `:68-75` (test deps, `project(':model')` and its M17 deviation comment `:71-74`), `:78-83` (stack-trace-recovery block)
+- `common.gradle` (compileSdk 36, minSdk 23, `-Werror` JavaCompile args, **`lint { warningsAsErrors true; abortOnError true; checkGeneratedSources = true }`**) ; `find . -name 'lint-baseline*.xml'` → none
+- `grep -rn '@HiltAndroidApp\|@AndroidEntryPoint\|@HiltViewModel\|javax.inject\|dagger\.' --include='*.java' --include='*.kt'` → **2 lines, both `PodcastApp.java`** ; `grep -rn 'kapt\|ksp\|hilt' --include='*.gradle'` → only root `apply false` + `:app`
+- `./gradlew -q :app:dependencies --configuration playDebugCompileClasspath` → `hilt-android:2.58`, `dagger:{strictly 2.58}`, `hilt-core:{strictly 2.58}`, `dagger-lint-aar:{strictly 2.58}`, `javax.inject:1`, coroutines `1.9.0`, lifecycle `2.9.4`
+- `./gradlew -q :ui:preferences:dependencies --configuration playDebugUnitTestRuntimeClasspath` → lifecycle `2.8.7 -> 2.9.4`, coroutines `1.9.0`, robolectric `4.16`; **zero `com.google.dagger:*`, zero `javax.inject`**
+- `ui/preferences/src/test/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/` — 15 files, 11 test classes, **55 `@Test`** (per-file counts in finding 5, measured by `grep -c '@Test'`)
+- `…/RecordingSynchronizationQueue.kt:7-50` (`val calls`, `var onCall`, nine overrides) ; installation sites `SyncSettingsHarnessSmokeTest.kt:35,40`, `SynchronizationPreferencesFragmentLifecycleTest.kt:38,44`, `GpodderAuthenticationFragmentCancellationTest.kt:55,61`, `NextcloudAuthenticationFragmentCharacterizationTest.kt:46,51`, `GpodderAuthenticationFragmentAsyncCharacterizationTest.kt:43,49`, `GpodderAuthenticationFragmentCharacterizationTest.kt:48,53`, `SyncSettingsScreenshotCaptureTest.kt:42,47`, `SynchronizationPreferencesFragmentCharacterizationTest.kt:50,55`
+- `…/SyncSettingsTestHost.kt:7` (`: AppCompatActivity()`, plain) ; `…/SyncSettingsCaptureHost.kt:7` (`: ToolbarActivity()`, plain)
+- `…/SynchronizationPreferencesViewModelTest.kt:26-53` (Robolectric, `Dispatchers.Main.immediate` collectors, `idle()` pumping, no `runTest`), `:143-158` (static writes → `uiState` assertions)
+- `…/SynchronizationPreferencesFragmentCharacterizationTest.kt:37-64` (setUp/tearDown/attachFragment), `:221`, `:233`
+- `grep -rn '@Config' …/screen/synchronization/` → one hit, `SyncSettingsScreenshotCaptureTest.kt:31` (`sdk`/`qualifiers` only, no `application`) ; `find . -name 'robolectric.properties'` → **none** ; `ui/preferences/src/main/AndroidManifest.xml` (bare `<manifest>`, no `<application>`)
+- `ui/preferences/README.md` conventions 1-16 (esp. 2 `open`, 4 `!!` policy + Gap 16 fixed, 5 pinned defects, 6 `getHttpClient()`, 7 test host, 8 flavoured tasks, 13 `StateFlow`, 15 EventBus-tied-to-collection, 16 no `coroutines-test`)
+- `storage/preferences/README.md` (2 lines, no conventions) ; `net/sync/service/README.md` conventions 1-11 ; `net/sync/service-interface/README.md` conventions 6, 8, 9 ; `app/README.md`
+- `.editorconfig` (`ktlint_code_style = android_studio`, `max_line_length = 120`)
+
+## Plan
+_Last updated by: legacy-android-planner | 2026-09-16 (red-team Loop 1 patch: D15, Step 6a, AC24, AC18 amended, AC5 corrected, Step 4 justified — see "Response to Red-Team (Loop 1)" below. Originally written 2026-09-01.)_
+
+### Objective
+
+Stand up this repository's **first real Hilt graph** on the `:ui:preferences` Sync Settings slice (`screen/synchronization/`): an injectable `SyncSettingsRepository` seam over `:storage:preferences`' `SynchronizationSettings` statics and the `SynchronizationQueue.instance` global, bound by a real `@Module @InstallIn(SingletonComponent::class)`, consumed by a `@HiltViewModel` `SynchronizationPreferencesViewModel` and an `@AndroidEntryPoint` `SynchronizationPreferencesFragment` — while the 55-test Milestone 17 characterization suite stays green with **zero assertion changes anywhere**.
+
+---
+
+### Resolved Decisions
+
+Research listed ten unknowns. They resolve as: 1(a)→**D2**, 2(b)→**D5**, 3(c)→**D7**, 4(d)→**D8**, 5(e)→**D11** *(the `HiltTestApplication`-scoping half)* and **D15** *(the `:app`/`PreferenceActivity` ripple half — added in red-team Loop 1)*, 6(f)→**D1** (locked by José), 7→**D5**, 8→**D4**, 9→**D3**, 10→**D10**. Five decisions have no corresponding unknown: **D6** (the ViewModel's secondary constructor), **D9** (proving the graph is real), **D12** (four of the characterization gaps), **D13** (branch/baseline), **D14** (what is *not* wrapped). **D15** additionally closes Research characterization gap **4**, which D12's table omitted. Two carry an Open Question for José (**D5**→OQ1, **D14**→OQ2), neither blocking.
+
+---
+
+**D1 — Option B, the real Hilt graph. Locked by José 2026-09-01; recorded here, not relitigated.** (Unknown f.)
+
+The `di` milestone stands up an actual container: `hilt` + `ksp` plugins on `:ui:preferences`, `@AndroidEntryPoint` on the slice fragment, `@HiltViewModel` + `@Inject constructor` on the ViewModel, and a real `@Module @InstallIn(SingletonComponent::class)` with `@Binds`. Option A (a plain Kotlin interface with a hand-written default, no container) was rejected as too weak for a `di` case study — it would have kept all 55 tests byte-identical and delivered dependency inversion, but no graph, and the milestone is billed as writing the repo's first one.
+
+**KSP is forced, not preferred** (Research track-finding, confirmed): `:app` is 100 % Java (0 `.kt` files) and processes Hilt with javac `annotationProcessor`; `:ui:preferences` is Kotlin, and javac annotation processing never sees Kotlin declarations. kapt is used nowhere in this repo and is not introduced. `hilt-navigation-fragment` is **not** added — it exists for `by hiltNavGraphViewModels()` and there is no Navigation Component in this module.
+
+---
+
+**D2 — The seam lives in `:ui:preferences`, in the slice package. `:storage:preferences` is not opened, and no new Gradle module is created.** (Unknown a.)
+
+Three options were costed:
+
+| Option | Cost |
+|---|---|
+| Interface in `:storage:preferences` | Gives that module its **first Kotlin file and its first test source set** — inside the milestone whose regression net must hold still. `:storage:preferences` has no `src/test/` at all (verified). M19 owns that module's fate and its 18-production-call-site conversion question; pre-empting it here buys nothing this milestone can use. |
+| **A new small interface module** | `settings.gradle`, a new `build.gradle`, a new `README.md`, a new module in the module map — for a six-method interface with two consumers, both in one package. Build churn out of proportion to the seam. |
+| **`:ui:preferences`, in `screen/synchronization/`** ✅ | Zero new modules, zero new test source sets, zero new build files. The interface sits beside its only consumers and beside the M17 ViewModel. The seam is screen-local, which is what an à-la-carte `di` milestone touching one slice should produce. |
+
+**Checkable mechanism:** `git diff --name-only origin/develop -- storage/ settings.gradle` is **empty** (AC16).
+
+---
+
+**D3 — The mixed-processor Hilt build gate is Step 2, it is proved by a grep over `:app`'s generated component, and its failure is a full stop with escalation to José.** (Unknown 9.)
+
+`:app` processes Hilt via javac `annotationProcessor` (`app/build.gradle:93`); `:ui:preferences` must process it via KSP. Cross-module aggregation into `:app`'s `SingletonComponent` is *expected* to work — Hilt writes `@InstallIn`/`@AggregatedRoot` metadata into class files that `:app`'s processor reads — but **nothing in this repo has ever exercised it**, and Research could not certify it from static inspection.
+
+Step 2 therefore lands the plugins, the deps, the seam and the `@Module` **together and unconsumed**, which is the earliest moment at which the question is answerable at all: an empty `@Module` proves the plugin runs but not that the binding aggregates. The gate is three commands plus one grep:
+
+```
+./gradlew :app:assembleDebug
+./gradlew assemblePlayDebug
+./gradlew assemblePlayDebugAndroidTest
+grep -rl "SyncSettingsModule" app/build/generated/
+```
+
+**Amended by José 2026-09-16, at Step 2 execution time.** The grep originally named here targeted `SyncSettingsRepository` — the bound *interface*. Execution showed that string absent from every generated file even on a correct build, because Dagger's aggregation output only names a binding's interface type once something consumes it, and Step 2 deliberately leaves the binding unconsumed by design (consumption is Steps 5–7). The developer investigated rather than accepting that at face value: `:app`'s generated `PodcastApp_HiltComponents.java` and `PodcastApp_ComponentTreeDeps.java` both name `SyncSettingsModule.class` as an aggregated module, which is the actual cross-module-aggregation proof this gate wants — a `@Module` declared in a KSP-processed Kotlin library reached the javac-processed application's `SingletonComponent`. The grep target is corrected to `SyncSettingsModule` accordingly; the gate's intent and stop-condition are unchanged. The original grep's failure at Step 2 (2026-09-16) is recorded in Implementation Notes as the finding that prompted this correction, not silently dropped.
+
+The (corrected) grep must return at least one generated Dagger/Hilt source under `:app` naming `SyncSettingsModule` — that is the executable proof that a binding declared in a KSP-processed Kotlin **library** reached the javac-processed **application**'s `SingletonComponent`. A green `assembleDebug` alone is not sufficient evidence and must not be reported as such.
+
+> **Stop-condition, pre-authorised. If any of the four fails, the developer STOPS and escalates to José — no improvisation.** Specifically forbidden as an in-flight remedy: applying `kotlin-android` + KSP to `:app` (a ~200-file module with zero Kotlin today), and introducing kapt (a new plugin, a new catalog alias, and a direction this portfolio has been avoiding since Milestone 16). Both are expensive enough that the choice belongs to José, and both are why this gate is Step 2 rather than Step 6. The failing output is pasted into Implementation Notes before escalating.
+
+---
+
+**D4 — The `SynchronizationQueue` provider is a per-call read of the global. The seam holds no queue reference, and `SynchronizationQueueImpl` is not bound.** (Unknown 8 — the decision that determines whether the regression net survives.)
+
+`DefaultSyncSettingsRepository` reads `SynchronizationQueue.instance` **inside each command method**, through one private accessor:
+
+```
+private val queue: SynchronizationQueue get() = SynchronizationQueue.instance!!
+```
+
+Not a constructor parameter, not a field, not a `@Provides fun provideQueue(): SynchronizationQueue = SynchronizationQueue.instance!!`.
+
+**The rejected alternative and exactly what it costs.** Binding `SynchronizationQueueImpl(context)` would be a *real* binding rather than a façade — but it (i) creates a **second live `SynchronizationQueueImpl`** enqueuing WorkManager requests, because `ClientConfigurator.java:53` remains the assigner and changing it is `:app` scope this milestone does not open; and (ii) **instantly breaks all eight test classes** that install `RecordingSynchronizationQueue` by assigning the global, which is the only injection mechanism the frozen suite has. It destroys the equivalence instrument in the same diff that is supposed to be proving equivalence. Rejected.
+
+**Why per-call rather than a `@Provides` read at injection time.** An unscoped `@Provides` returning `SynchronizationQueue.instance!!` would be read at **field-injection time (`onAttach`)** rather than at click time. In the frozen suite that difference is invisible — `@Before` installs the queue before the fragment attaches — which is precisely Research gap 2: *a provider that changes when the global is read is not observable by any existing test*. Per-call reading preserves the read timing **exactly**, and Step 3 makes that property executable rather than argued (`testQueueIsResolvedFromTheGlobalAtEachClickNotCachedAtAttach`, D12). That test is what rules the `@Provides` shape out; it is not ruled out by preference.
+
+**The equivalence property this decision gives up, stated plainly.** The graph is a **façade over the global, not a replacement for it**. `SynchronizationQueue.instance` still exists, is still a public mutable `@JvmStatic var`, is still assigned exactly once at `ClientConfigurator.java:53`, and is still read (once) by the seam. Five test classes in three other modules depend on that global existing and being assignable (`net/download/service`, `storage/database`, and `net/sync/service-interface`'s own `SynchronizationQueueTest`), so removing it was never on the table for this milestone. **What the milestone can honestly claim** is that the slice's seven direct reads of the global became one, that the one lives behind a bound, replaceable interface, and that the consumers now receive a dependency instead of reaching for a process global. **What it must not claim** is that it replaced `ClientConfigurator`'s singleton pattern. The unsynchronised read of a plain `var` is inherited unchanged, not fixed (Research track-finding 7).
+
+---
+
+**D5 — `@AndroidEntryPoint` goes on `SynchronizationPreferencesFragment` only. `GpodderAuthenticationFragment` and `NextcloudAuthenticationFragment` keep their four `SynchronizationQueue.instance!!` sites, and the deferral is written into the future-work file.** (Unknowns b and 7.)
+
+Research measured the blast radius as 21 / 37 / 43 tests for SyncPrefs-only / +Gpodder / +Nextcloud. The two dialog fragments have **no ViewModel** (M17 D3 kept the Gpodder wizard's five fields on the fragment because six characterization tests reach them by reflected name, and creating a wizard ViewModel is explicitly M20's scope). There is no mechanism that injects into a non-`@AndroidEntryPoint` fragment in this test environment — `EntryPointAccessors.fromApplication(...)` needs a Hilt `Application` and fails under Robolectric in exactly the same way. So the dialogs' four `!!` sites either come with a doubling of the test-infra footprint or they stay.
+
+**They stay.** The marginal `di` value of field-injecting the same six-method seam into two dialog fragments is small; the marginal cost is the equivalence oracle. Consequence, stated as a number rather than left implicit: the slice's `SynchronizationQueue.instance!!` count goes **7 → 1**, not 7 → 0, and the slice `!!` total goes **40 → 38**, not 40 → 33. Step 9 writes the four deferred sites into `tasks/antennapod-sync-settings-modernization-future-work.md` by file and line so the next milestone inherits them by name.
+
+**The `@AndroidEntryPoint` requirement propagates through the shared test host, and the real infra footprint is 4 pre-existing test classes / 21 tests — but it cannot be reached with literally zero `@Test`-body edits.** This is the one place the plan departs from the letter of José's lock, and it is measured, not assumed:
+
+- `SyncSettingsTestHost` is built by **9** of the 11 test classes. Annotating *it* `@AndroidEntryPoint` (the only route that changes no test-class reference at all) drags **10 of 11 classes / 48 tests** onto `HiltTestApplication` + `HiltAndroidRule` — and breaks outright on `AuthenticationDialogJavaInteropTest.java`, because **KSP does not process Java sources**, so a `@HiltAndroidTest` there would need a second, javac `testAnnotationProcessor` in the same source set: a third unverified processor arrangement in a milestone that already has one.
+- The plan therefore adds `@AndroidEntryPoint class SyncSettingsHiltTestHost : SyncSettingsTestHost()` (a new test-source file; `SyncSettingsTestHost` becomes `open`, one token) and points **only the four affected classes** at it. That requires substituting the identifier `SyncSettingsTestHost` → `SyncSettingsHiltTestHost` in **six** `Robolectric.buildActivity(...)` calls, of which **five sit inside `@Test` bodies** (`SynchronizationPreferencesFragmentLifecycleTest.kt:69,77,94,110`; `SyncSettingsHarnessSmokeTest.kt:53`) and one sits in a private `attachFragment()` helper (`SynchronizationPreferencesFragmentCharacterizationTest.kt`).
+- Those six lines change **one identifier each**. No assertion changes, no arrange step changes, no act step changes, no fixture changes. `SyncSettingsCaptureHost` has exactly one user and is annotated in place, so `SyncSettingsScreenshotCaptureTest` changes **zero** references.
+
+**Net: 4 pre-existing test classes touched (21 tests), 7 pre-existing test files byte-identical, 6 changed lines that are identifier substitutions, and zero changed assertions anywhere in the repo.** Raised for José as **OQ1** because it is a deviation from a lock he wrote, not because it is in doubt.
+
+---
+
+**D6 — The ViewModel keeps a no-arg secondary constructor so the seven frozen `SynchronizationPreferencesViewModelTest` `@Test` bodies stay byte-identical. It is a dated test affordance with a named removal milestone, not a design preference.**
+
+Measured at planning time: `SynchronizationPreferencesViewModelTest.kt` constructs `SynchronizationPreferencesViewModel()` at lines **57, 66, 75, 98, 112, 136, 159** — inside seven `@Test` bodies, not in `@Before`. Adding a required constructor parameter forces seven `@Test`-body edits in the file that is the ViewModel's own equivalence oracle.
+
+```
+@HiltViewModel
+class SynchronizationPreferencesViewModel @Inject constructor(
+    private val repository: SyncSettingsRepository
+) : ViewModel() {
+    constructor() : this(DefaultSyncSettingsRepository())
+    ...
+}
+```
+
+A **secondary constructor**, not a Kotlin default argument: Dagger sees exactly one `@Inject`-annotated constructor and there is no `@Inject`-with-defaults edge case to rely on. The seven tests compile and run unchanged, against a `DefaultSyncSettingsRepository` that delegates per call to the same statics those tests already write — so the oracle keeps observing what it observed before, through one more frame.
+
+**The criticism this invites, answered rather than hidden:** a class that can construct its own concrete dependency is a weaker inversion, and a broken Hilt wiring would fall back to `ViewModelProvider`'s default `NewInstanceFactory`, call the no-arg constructor reflectively, and **pass every test silently**. That is a real failure mode, and it is why **D9** exists. The affordance is removed at Milestone 20, when the suite is legitimately rewritten because the Views it drives no longer exist; Step 9 records that in the future-work file.
+
+---
+
+**D7 — The Hilt test infrastructure lands in its own step, with zero production diff, and that is what keeps it out of the "don't rewrite the regression net" rule.** (Unknown c.)
+
+The future-work file's rule (`:88-94`) is written absolutely: the suite must stay green throughout, *not be rewritten alongside the DI change*. This plan does not reinterpret that rule quietly — it satisfies it structurally. **Step 4 adds every Hilt test annotation, the rule fields, the new test host and the six identifier substitutions, and changes not one line of `src/main/`.** All 62 tests are green before Step 4 and green after it, with the same per-class counts, against production source that `git diff origin/develop -- ui/preferences/src/main/` shows to be unchanged except for Step 2's two new, still-unconsumed files.
+
+That is what makes the annotation change **provably behavior-neutral before the seam is load-bearing**, and it is why Step 4 sits between the characterization tests (Step 3) and the production change (Steps 5–6) rather than being folded into either. A suite that is rewritten in the same commit it is meant to be policing proves nothing; a suite that is annotated in a commit with no production diff, and *then* polices a later commit, proves exactly as much as it did before.
+
+---
+
+**D8 — Synchronous seam. `kotlinx-coroutines-test` is NOT catalogued. Turbine is NOT catalogued. The milestone's one catalog line is `hilt-android-testing`.** (Unknown d — Research's recommendation, adopted, against a carried expectation.)
+
+The pre-research block and the future-work file both inherited "`kotlinx-coroutines-test` becomes genuinely necessary here" from M17 D9. **That expectation rests on a premise this milestone declines.** Every value the seam wraps is a synchronous `SharedPreferences` getter (`getBoolean`/`getLong`) or a synchronous `SynchronizationQueue` method; `MutableStateFlow.value` assignment is synchronous; the ViewModel's `onStarted()`/`onSyncEvent()` are plain functions with no I/O behind them. Making the repository's reads `suspend` would be a **design choice that is also a behavior change**: it inserts a suspension point between `onStart()` and the first `render()`, and two frozen tests discriminate on exactly that ordering (`SynchronizationPreferencesFragmentLifecycleTest.testStickyEventReplaysOnStart` and `testOnStartSetsTitleAndOnStopSetsEmptySubtitleWhereasDisconnectedSetsNull`, M17 D7).
+
+So: the interface is entirely non-`suspend`, M17's determinism story (README convention 16) carries over unchanged, and **the catalog moves by exactly one line** — `hilt-android-testing`, on the existing `hilt` version ref:
+
+```
+hilt-android-testing = { module = "com.google.dagger:hilt-android-testing", version.ref = "hilt" }
+```
+
+**Turbine is decided explicitly and declined.** No test in this milestone asserts on a stream shape; the one existing test that does (`testConsecutiveEventsWithSameMessageResIdAreBothDelivered`) already collects into a list without it, and it is not touched here. Adding a flow-assertion library to a milestone whose new tests are all plain synchronous assertions would be cataloguing to satisfy an inherited expectation.
+
+`kotlinx-coroutines-test` is not deferred to a named milestone this time — it becomes earned when something actually suspends. Step 9 corrects the future-work file's Milestone 18 row so the expectation is retired rather than silently carried into Milestone 19.
+
+**Checkable mechanism:** AC8 — the `libs.versions.toml` diff is exactly one `[libraries]` line; `git grep -n "coroutines-test\|turbine\|runTest\|TestDispatcher\|Dispatchers.setMain" -- 'ui/preferences/**' '*.toml'` returns zero.
+
+---
+
+**D9 — The graph is proved real by a test that would fail if Hilt silently fell back to the default factory.** (No corresponding unknown; forced by D6.)
+
+`SyncSettingsHiltGraphTest` (Step 7) uses `@UninstallModules(SyncSettingsModule::class)` + `@BindValue` to replace the binding with a file-private `RecordingSyncSettingsRepository`, attaches `SynchronizationPreferencesFragment` to the Hilt host, and asserts:
+
+1. `testFragmentFieldInjectionReceivesTheBoundRepository` — clicking the sync row records `syncImmediately` **on the bound fake**, and `RecordingSynchronizationQueue` on the global records **nothing**. This fails if `@AndroidEntryPoint` field injection did not happen.
+2. `testViewModelIsConstructedByHiltWithTheBoundRepository` — the fake reports a connected provider and a known last-sync timestamp, and the ActionBar subtitle renders that report. This fails if `ViewModelProvider(this)[…]` resolved the **default** `NewInstanceFactory` and called D6's no-arg constructor instead of `HiltViewModelFactory` calling the `@Inject` one.
+
+Without these two, every acceptance criterion in this milestone is satisfiable by a completely inert Hilt graph. They are the milestone's central claim made executable.
+
+---
+
+**D10 — Lint over Hilt-generated code: measure first, then a pre-authorised three-rung ladder. No lint baseline is created.** (Unknown 10.)
+
+`common.gradle:57-63` sets `checkDependencies true`, `warningsAsErrors true`, `abortOnError true`, `checkGeneratedSources = true`, and `find . -name 'lint-baseline*.xml'` returns nothing repo-wide. `dagger-lint-aar:{strictly 2.58}` is on the compile classpath. Android Lint will therefore inspect Hilt's generated code with warnings promoted to errors and no baseline to absorb them — a plausible first-red build that would be expensive to discover at the CI bar.
+
+**Step 2 runs `./gradlew checkstyle lint` as part of its gate.** If it is green, nothing in this decision is used and no lint line is written. If it is red, the developer applies the **lowest applicable rung** and records the failing output in Implementation Notes:
+
+| Rung | When | Change |
+|---|---|---|
+| **(i)** | The failures are only in **generated** Hilt sources | `lint { checkGeneratedSources = false }` in `ui/preferences/build.gradle` (and, if `:app`'s aggregated component also flags, in `app/build.gradle`). A **module-scoped override**; the repo-wide `true` stays true for every other module. |
+| **(ii)** | Rung (i) is judged too broad in review, and one named check is responsible | `lint { disable "<exact-check-id>" }` in the same module block, that id only. |
+| **(iii)** | The failure is in **hand-written** slice code (e.g. `UseRequireInsteadOfGet`) | Fixed at the point of use per `ui/preferences/README.md` convention 4 — `@SuppressLint(...)` — **not** by disabling a check. |
+
+**A lint baseline is explicitly not used**, at any rung. The repo has none; introducing one would freeze a snapshot of unrelated pre-existing warnings and silently lower the module's bar for everything, which is a much larger change than the problem. If none of the three rungs applies, that is a Step-2 stop-condition and escalates with D3's.
+
+---
+
+**D11 — `HiltTestApplication` is applied per test class via `@Config(application = …)`. No module `robolectric.properties` is created — and that is a correctness decision, not a style one.** (Unknown 7.)
+
+`:ui:preferences`' **entire** test source set is the sync-settings slice: 15 files, all in `screen/synchronization/` (verified — there is no other test package in the module). So a module-level `robolectric.properties` would not scope neatly to the classes that need Hilt; it would swap the `Application` under **all 11 test classes / 55 tests**, including the seven that need nothing from Hilt — `SynchronizationPreferencesViewModelTest`, both `AuthenticationDialog` classes (one of them the **Java** interop oracle), all three Gpodder classes with their reflected `ioDispatcher` seam, and `NextcloudAuthenticationFragmentCharacterizationTest`.
+
+Three concrete reasons it is the wrong mechanism here:
+
+1. **It does not do what it looks like it does.** A `HiltTestApplication` without `@HiltAndroidTest` and `HiltAndroidRule` on the class throws at `TestApplicationComponentManager.generatedComponent()` the moment anything requests the component. So the properties file would not quietly cover seven extra classes — it would push them into needing the rule too, which is the 48-test outcome D5 rejects.
+2. **It is invisible in review.** One added file silently changes the `Application` for eleven classes; a per-class `@Config` line shows up in each class's own diff, and the reviewer can count them.
+3. **It interacts with an existing `@Config`.** `SyncSettingsScreenshotCaptureTest.kt:31` already carries `@Config(sdk = [34], qualifiers = "w411dp-h891dp-xhdpi")` under `@GraphicsMode(NATIVE)`. Class-level `@Config` and a properties file merge rather than conflict, but the merge precedence is one more unverified interaction in a milestone that already has one. Adding `application = HiltTestApplication::class` **into the existing annotation** is a one-line, unambiguous edit.
+
+`SyncSettingsTestHost` / `SyncSettingsCaptureHost` and `RecordingSynchronizationQueue` all keep working: the hosts because the Hilt variant subclasses the original (same theme, same `onCreate` order) or is annotated in place, and `RecordingSynchronizationQueue` because D4's per-call read means the global is still the injection point. Step 4's whole job is to demonstrate that with a green 62 and an empty `src/main/` diff.
+
+---
+
+**D12 — Research's four characterization gaps are closed before the seam is consumed. Gap 1 is closed by design plus two greps, and that limit is stated rather than papered over.**
+
+| Gap | Closed by | Where |
+|---|---|---|
+| **2 — `SynchronizationQueue.instance` read timing / null state** | `testQueueIsResolvedFromTheGlobalAtEachClickNotCachedAtAttach` (Step 3, against unmodified consumer code) and `testQueueCommandThrowsNullPointerExceptionWhenNoQueueIsInstalled` (Step 2, on the impl). The second is the repo's **first ever** test of the not-yet-initialised state, and it pins the **exception type** — `!!` throws `NullPointerException`; `checkNotNull`/`requireNotNull` would throw `IllegalStateException`, which README convention 4 exists to prevent. | Steps 2, 3 |
+| **3 — `@AndroidEntryPoint`'s effect on `AnimatedPreferenceFragment`** | `testSharedAxisTransitionsAndSurfaceBackgroundAreAppliedToTheAttachedFragment` — asserts all four `MaterialSharedAxis` transitions are set and that the fragment's root view background is `ThemeUtils.getColorFromAttr(context, R.attr.colorSurface)`. Green at Step 3 (no `Hilt_` superclass), and **required green at Step 6** with `Hilt_SynchronizationPreferencesFragment` inserted between the fragment and the Java abstract base. | Step 3 → AC14 |
+| **3b — reflective re-instantiation under the `Hilt_` superclass** | `testFragmentRemainsInstantiableByFragmentFactory` — `FragmentFactory().instantiate(classLoader, name)` succeeds and the class stays `public` with a no-arg constructor. `PreferenceActivity.java:75` is a direct `new`, but `FragmentManager` re-creates the fragment reflectively on configuration change and state restore, and nothing tests that today. | Step 3 → AC12 |
+| **5 — `SynchronizationCredentials.clear()`'s `UserPreferences` side effect** | `testLogoutRowClearsCredentialsFlipsGpodnetNotificationsAndThenClearsTheQueue` — sets `pref_gpodnet_notifications` to `false` directly through the default `SharedPreferences`, clicks the logout row, and asserts the credentials are cleared, `UserPreferences.getGpodnetNotificationsEnabledRaw()` is `true` again, and the queue `clear()` landed after the credential clear. The logout listener is one of the three call sites this milestone rewrites, so pinning its **full** effect set first is the point; it also forecloses a future wrapper that reimplements `clear()` as three preference writes and passes the whole suite. (Recorded honestly: the test uses the literal key `"pref_gpodnet_notifications"`, because `UserPreferences` exposes no setter to `false`.) | Step 3 |
+| **1 — `ClientConfigurator.initialize` ordering and its `initialized` guard** | **Not closed by a test, and this is stated rather than implied.** The only place it could be tested is `PodcastApp.onCreate` in `:app`, which is outside File Scope and has no test harness. It is closed by *design* instead: the binding is **unscoped** (no `@Singleton` anywhere in the diff) and D4's impl **holds no field** of type `SynchronizationQueue` or `SharedPreferences`, so nothing in the graph can read the global before `ClientConfigurator` has run. The two greps that check it are **AC20**. | AC20 |
+
+Gap 6 (Nextcloud's two `.instance!!` sites) was listed by Research only to close the question — those sites are covered by `NextcloudAuthenticationFragmentCharacterizationTest` and are not touched here (D5).
+
+---
+
+**D13 — Branch fresh from a fetched `origin/develop`; re-measure the baseline before writing a line. Step 1 produces no repo diff.**
+
+Research verified `origin/develop` at **`b8eda5b674f00b0fa7df1ffc2a5283510a4a6e4a`** with all five milestone commits as ancestors and an empty `git diff HEAD origin/develop`. Step 1 re-derives, from a real run and **not** copied from this plan:
+
+| Baseline | This plan's measured claim |
+|---|---|
+| Sync-settings suite | **15 files, 11 test classes, 55 `@Test`** — Gpodder Char 9, SyncPrefs Char 8, ViewModel 7, Gpodder Async 6, Nextcloud 6, Smoke 6, AuthDialog 4, Lifecycle 4, Screenshot 3, JavaInterop 1, Gpodder Cancellation 1 |
+| `!!` per file (`grep -o '!!' <f> \| wc -l`) | SyncPrefsFragment **22**, Gpodder **11**, Nextcloud **7**, ViewModel **0**, AuthDialog **0** = **40** |
+| `SynchronizationQueue.instance` production reads in the slice | **7** — SyncPrefs `:121,:125,:130`; Gpodder `:83,:238`; Nextcloud `:95,:99` |
+| Resolved dependencies | `:ui:preferences:dependencies` for `playDebugCompileClasspath` and `playDebugUnitTestRuntimeClasspath`, saved outside the repo |
+| `:app` unit tests | `./gradlew :app:testPlayDebugUnitTest --rerun`, per-class counts (4 classes, **none preference-related** — which is exactly why this measurement cannot close the `PreferenceActivity` ripple; see D15) — the before-half of AC18 |
+| `:app` instrumented `PreferencesTest` (**added in red-team Loop 1, D15**) | `app/src/androidTest/java/de/test/antennapod/ui/PreferencesTest.java` on a real device/emulator: **22 `@Test`**, pass/fail per test recorded verbatim — the before-half of AC24. A red here at baseline is a **pre-existing condition, recorded as such**, not this milestone's, and it shifts the binding evidence to Step 6a's manual checklist |
+
+Any divergence is a **finding recorded before proceeding**, not a number quietly adjusted. `AGENTS.md` forbids committing on `develop`.
+
+---
+
+**D14 — `SynchronizationCredentials` is NOT wrapped this milestone, and neither is `SynchronizationSettings.setSelectedSyncProvider`/`getSelectedSyncProviderKey`. The seam is exactly the six calls its two injected consumers make.**
+
+The milestone description names `SynchronizationCredentials`. It is dropped, deliberately, with the reason:
+
+- Its slice call sites are `GpodderAuthenticationFragment` (9), `NextcloudAuthenticationFragment` (4) and `SynchronizationPreferencesFragment` (5, of which `:167,:168` are inside `updateScreen()` and `:110,:114` inside the provider-chooser dialog). **Both dialog fragments are out of scope (D5), and `updateScreen()`'s state hoisting is explicitly Milestone 20's** (M17 D3 reason 2, verbatim in the future-work file).
+- Wrapping `clear()` for the single logout-row caller would create a seam that **one** consumer uses and **three** bypass — which is exactly how a seam becomes two seams (M17 D4's phrasing, and the reason M17 refused to take `SynchronizationQueue` into the ViewModel constructor).
+- The same argument applies to `setSelectedSyncProvider` (also called from both dialogs) and `getSelectedSyncProviderKey` (called from `updateScreen()`).
+
+The interface is therefore exactly:
+
+```
+interface SyncSettingsRepository {
+    fun isProviderConnected(): Boolean
+    fun isLastSyncSuccessful(): Boolean
+    fun lastSyncAttempt(): Long
+    fun syncImmediately()
+    fun fullSync()
+    fun clearSyncQueue()
+}
+```
+
+Six methods: three reads the `@HiltViewModel` needs (replacing its five direct static reads at `:41,:43,:44,:58,:59`) and three commands the `@AndroidEntryPoint` fragment needs (replacing `:121,:125,:130`). Reads and commands sit on one interface rather than two: there are two consumers, one per half, and splitting produces a second binding, a second `@Binds`, and a second test double for a six-method screen-local seam. The tradeoff is disclosed — the ViewModel can see `fullSync()` and must not call it — and the split becomes worth making when M19/M20 hoist `updateScreen()`'s state and the seam gains real consumers. Raised for José as **OQ2**, non-blocking, because the milestone description named `SynchronizationCredentials` explicitly.
+
+---
+
+**D15 — `@AndroidEntryPoint` on `PreferenceActivity` changes the production host of ten fragments, so it gets its own gate: the pre-existing `:app` instrumented `PreferencesTest` run before and after, plus the `AGENTS.md`-mandated manual app run over a fixed screen checklist. What that does *not* cover is named, not implied.** (Added in red-team Loop 1. Answers the ripple half of Research Unknown 5(e) — D11 answered only the `HiltTestApplication` half — and closes Research characterization gap **4**, which D12's table omitted.)
+
+Step 6 adds two lines to `app/src/main/java/de/danoeh/antennapod/ui/screen/preferences/PreferenceActivity.java`, and those two lines reparent the real, shipping host of the **ten**-fragment ladder at `:63-88` onto a generated `Hilt_PreferenceActivity`. Only one of those ten fragments is `@AndroidEntryPoint`; the other nine (`UserInterfacePreferencesFragment`, `DownloadsPreferencesFragment`, `ImportExportPreferencesFragment`, `AutoDownloadPreferencesFragment`, `PlaybackPreferencesFragment`, `NotificationPreferencesFragment`, `SwipePreferencesFragment`, `AutomaticDeletionPreferencesFragment`, `ParentalControlPreferencesFragment`) plus `MainPreferencesFragment` (attached directly in `onCreate`, `:49-52`) and the search route at `:149-160` are untouched by File Scope and covered by no test this plan writes.
+
+**What the existing plan could and could not prove, stated exactly.** AC18 re-runs `:app:testPlayDebugUnitTest` and compares per-class counts — but D13's own baseline records those four classes as "none preference-related", so AC18 is structurally incapable of failing because of this change. D9's `SyncSettingsHiltGraphTest` attaches the fragment to the **synthetic** `SyncSettingsHiltTestHost` (an `AppCompatActivity` in the test source set), never to `PreferenceActivity`. So before this decision, the one path that actually ships — `Hilt_PreferenceActivity` → `ToolbarActivity` hosting `Hilt_SynchronizationPreferencesFragment` → `Hilt_AnimatedPreferenceFragment` → the Java `AnimatedPreferenceFragment` — was exercised by nothing at all. Every other unverified cross-cutting interaction in this plan got a gate (D3 the mixed-processor build, D10 lint-over-generated-code, D11 the `HiltTestApplication` scoping); this one did not, and `AGENTS.md`'s hard rule ("Usually you will need to run the application, but if there are existing tests that cover the code you wrote, you can run those instead") is written for exactly this situation.
+
+**The gate, in two halves, both at Step 6a.**
+
+1. **The pre-existing instrumented suite, run before and after — no new test file.** `app/src/androidTest/java/de/test/antennapod/ui/PreferencesTest.java` already exists: **22 `@Test`**, `@LargeTest`, an `ActivityTestRule<PreferenceActivity>` that launches the **real** Activity in `@Before` and then drives `MainPreferencesFragment` → **User Interface**, **Playback**, **Downloads** and **Auto-download** — four of the nine other fragments, through the real ladder, with the real back stack. It is a better instrument than anything this milestone would write from scratch, it is authored upstream rather than by us, and it costs **zero** File Scope: it is *run*, never edited (AC24). Because it is instrumented, it is baselined at Step 1 and re-run at Step 6a, and the comparison — not the absolute result — is the criterion, exactly as AC18 does for `:app`'s unit tests. If it is red at baseline for unrelated reasons, that is recorded as a pre-existing condition and the manual checklist below becomes the binding evidence.
+2. **The manual app run `AGENTS.md` requires**, over a fixed, recorded checklist — including the two paths `PreferencesTest` does *not* touch: the Sync Settings screen itself (the only Hilt fragment) and `onSearchResultClicked`'s `result.highlight(fragment)` branch (`:160-161`), which acts on the fragment instance `openScreen` returned and is where a wrong instance would be swallowed silently rather than crash.
+
+**One trap recorded so the developer does not mis-run the check:** **Notification Preferences is not a valid fragment-attach probe on any device this milestone will use.** `openScreen` routes `R.xml.preferences_notifications` to the system notification-settings Intent when `Build.VERSION.SDK_INT >= 26` (`:119-124`) and never attaches `NotificationPreferencesFragment` at all. Use **User Interface** (`:66-67`) and **Playback** (`:76-77`) for the sibling-fragment check, and use Notification Preferences only to confirm the Intent still fires.
+
+**The residual risk, stated plainly rather than left implicit — in D4's form.** After this gate, the following remain uncovered and are accepted, not closed:
+
+- **Five of the nine sibling fragments are never opened by either half** in the required checklist — Import/Export, Swipe, Automatic Deletion, Parental Control, and `NotificationPreferencesFragment` itself (unreachable above API 26). The argument for accepting that: the Hilt transform is applied to the **host**, and a host-level breakage manifests at `Activity.onCreate`/fragment attach identically for every fragment in the ladder, so four sibling screens plus `MainPreferencesFragment` plus the Sync screen is a representative sample of the failure mode rather than an exhaustive enumeration of it. That is a judgement, and it is written down as one.
+- **The evidence is point-in-time, not a standing regression net.** Neither half runs in CI: CI executes `assemblePlayDebugAndroidTest`, which *assembles* instrumented tests and never runs them, and the manual run is by definition manual. Nothing added here would catch a *future* regression in the other nine fragments. The milestone does not claim otherwise.
+- **No automated unit-test coverage of `PreferenceActivity` is added**, and writing one would mean a Hilt-enabled Robolectric harness in `:app` — a fifth annotation-processor arrangement in a module with zero Kotlin, in a milestone whose critical path already carries one unproven one (D3). That cost is why the mitigation is a run of existing instruments rather than a new one.
+- **What the milestone may therefore claim:** that the shipping host/fragment pairing was exercised end-to-end on a real device, before and after, with the result recorded. **What it must not claim:** that the other nine preference fragments are now covered by tests.
+
+---
+
+### Steps
+
+**Ten steps, seven reviewable commits — Steps 2, 3, 4, 5, 6, 7 and 9.** Steps 1, **6a** and 8 produce **no repo diff** (baseline measurement, the `PreferenceActivity` host gate, and the CI-bar sweep) and fold into the following commit's Implementation Notes. Each commit leaves the build green and is independently committable. Step 6a is numbered `6a` rather than inserted as a new integer specifically so that every existing cross-reference to Steps 7, 8 and 9 in this plan, its ACs and its Milestone section stays valid.
+
+**Step 1 is not the conversion, Step 2 is the gate, and Step 3 is not optional.** Research flagged four characterization gaps (D12), so Step 3 writes that coverage against consumer code that is still byte-identical to `origin/develop`, before any consumer changes. This is non-negotiable.
+
+**Test-count ledger** — every figure re-derived from a real run at the step in question (AC2), never copied from here:
+
+| After step | Total | What moved |
+|---|---|---|
+| 1 | **55** | baseline, no diff |
+| 2 | **58** | +3 `DefaultSyncSettingsRepositoryTest` |
+| 3 | **62** | +4 `SyncSettingsSeamCharacterizationTest` |
+| 4 | **62** | test infra only |
+| 5 | **62** | — |
+| 6 | **62** | — |
+| 6a | **62** | no repo diff — the `PreferenceActivity` host gate (D15): the pre-existing `:app` instrumented `PreferencesTest` (**22 `@Test`**, not counted in this ledger — different source set, different task, never edited) re-run and compared to Step 1, plus the manual app-run checklist |
+| 7 | **64** | +2 `SyncSettingsHiltGraphTest` |
+| 8, 9 | **64** | — |
+
+**9 test methods written, all 9 in the final suite, across 3 new classes.** No test is deleted. 14 classes at the end.
+
+---
+
+**Step 1 — Branch fresh from `origin/develop`; re-measure and freeze the baseline. No repo diff.**
+`git fetch origin`; confirm `origin/develop`'s tip is `b8eda5b67` and that `f5d4c5551`, `45904a410`, `8e4c29217`, `cfe560cb0`, `b8eda5b67` are all ancestors; branch from `origin/develop`. If either check fails, **stop** — the baseline this plan's numbers are written against is not the one in front of you. Run `./gradlew :ui:preferences:testFreeDebugUnitTest --rerun` and `:testPlayDebugUnitTest --rerun` as two separate invocations and table per-class `@Test` counts across all 11 classes. Run the per-file `!!` greps and the `SynchronizationQueue.instance` grep. Run `./gradlew :app:testPlayDebugUnitTest --rerun` and table its 4 classes. **Also baseline the `:app` instrumented `PreferencesTest` on a real device/emulator (D15, AC24)** — `app/src/androidTest/java/de/test/antennapod/ui/PreferencesTest.java`, 22 `@Test` over the real `PreferenceActivity` — and record the per-test pass/fail verbatim; this is the before-half of the host gate, and any pre-existing red is recorded as pre-existing here, where it is unambiguous, rather than argued about at Step 6a. Capture both dependency configurations (D13). Tests: none added; **55** in the `:ui:preferences` unit suite (the 22 instrumented tests are a separate source set and task and are never counted into this plan's totals).
+
+**Step 2 — Wire Hilt + KSP into `:ui:preferences`, add the seam and its `@Module` unconsumed, and run the mixed-processor build gate.** Touches `ui/preferences/build.gradle`; creates `ui/preferences/src/main/java/.../synchronization/SyncSettingsRepository.kt` and `SyncSettingsModule.kt`; creates `ui/preferences/src/test/java/.../synchronization/DefaultSyncSettingsRepositoryTest.kt`.
+
+`build.gradle`: add `alias(libs.plugins.hilt)` and `alias(libs.plugins.ksp)` to the `plugins` block, `implementation libs.hilt.android` + `ksp libs.hilt.compiler` to `dependencies` (a bare `ksp` configuration, not a flavoured one — it covers all variants), and a `hilt { enableTransformForLocalTests = true }` block (needed from Step 4 for `@AndroidEntryPoint` under Robolectric; declared here so the build surface moves once). **No catalog line is added in this step** — `hilt-android` and `hilt-compiler` are already catalogued.
+
+`SyncSettingsRepository.kt` holds the six-method `interface SyncSettingsRepository` (D14) and `class DefaultSyncSettingsRepository @Inject constructor() : SyncSettingsRepository`, which delegates every read to `SynchronizationSettings` per call and every command through the single private `queue` accessor of D4. **No `@Singleton`, no scope annotation, no field of type `SynchronizationQueue` or `SharedPreferences`** (AC20). `SyncSettingsModule.kt` holds `@Module @InstallIn(SingletonComponent::class) abstract class SyncSettingsModule { @Binds abstract fun bindSyncSettingsRepository(impl: DefaultSyncSettingsRepository): SyncSettingsRepository }`. **Nothing consumes either file yet** — `SynchronizationPreferencesFragment.kt` and `SynchronizationPreferencesViewModel.kt` are not touched.
+
+**This step is the mixed-processor gate (D3).** Run the four gate commands, paste all four outputs, and confirm the `:app` generated-source grep returns a hit. Also run `./gradlew checkstyle lint` here for the first time — if red, apply D10's lowest applicable rung and paste the failing output. Adds **3** tests to `DefaultSyncSettingsRepositoryTest`:
+1. `testReadsDelegateToSynchronizationSettingsOnEveryCall` — write the statics, read the repo, write different values, read again; both observed.
+2. `testQueueCommandsDelegateToWhicheverQueueIsInstalledAtCallTime` — install queue A, call `syncImmediately()`; install queue B, call `fullSync()` and `clearSyncQueue()`; assert A recorded only `syncImmediately` and B recorded `fullSync`, `clear`.
+3. `testQueueCommandThrowsNullPointerExceptionWhenNoQueueIsInstalled` — `SynchronizationQueue.instance = null`, assert `syncImmediately()` throws `NullPointerException` (not `IllegalStateException`). Suite **55 → 58**.
+
+**Step 3 — Characterization tests for the four gaps, written against consumer code that is still byte-identical to `origin/develop`.** Creates `ui/preferences/src/test/java/.../synchronization/SyncSettingsSeamCharacterizationTest.kt`.
+Per D12. `git diff origin/develop -- ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SynchronizationPreferencesFragment.kt ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SynchronizationPreferencesViewModel.kt` must be **empty** at the end of this step — that emptiness is what makes these tests records of *current* behavior (AC10). The class uses `SyncSettingsTestHost` here and is repointed at the Hilt host in Step 4 along with the four pre-existing classes; it is a file this milestone creates, so editing it later is in scope. Adds **4** tests:
+1. `testQueueIsResolvedFromTheGlobalAtEachClickNotCachedAtAttach` — attach with queue A installed, click the sync row, assert A recorded `syncImmediately`; **then** assign queue B to the global with the fragment already attached, click force-full-sync, assert **B** recorded `fullSync` and A recorded nothing more. Rules out every injection-time-cached shape (D4).
+2. `testLogoutRowClearsCredentialsFlipsGpodnetNotificationsAndThenClearsTheQueue` — gap 5, mechanism in D12.
+3. `testSharedAxisTransitionsAndSurfaceBackgroundAreAppliedToTheAttachedFragment` — gap 3.
+4. `testFragmentRemainsInstantiableByFragmentFactory` — gap 3b. Suite **58 → 62**.
+
+**Step 4 — Hilt test infrastructure. Zero production diff.** Touches `gradle/libs.versions.toml`, `ui/preferences/build.gradle`, `ui/preferences/src/test/java/.../synchronization/SyncSettingsTestHost.kt`, `SyncSettingsCaptureHost.kt`, `SynchronizationPreferencesFragmentCharacterizationTest.kt`, `SynchronizationPreferencesFragmentLifecycleTest.kt`, `SyncSettingsHarnessSmokeTest.kt`, `SyncSettingsScreenshotCaptureTest.kt`, `SyncSettingsSeamCharacterizationTest.kt`; creates `SyncSettingsHiltTestHost.kt`.
+
+Per D7, D11 and D5. **The milestone's one catalog line** — `hilt-android-testing` on the existing `hilt` ref (D8) — plus `testImplementation libs.hilt.android.testing` and `kspTest libs.hilt.compiler` on the module. Create `@AndroidEntryPoint class SyncSettingsHiltTestHost : SyncSettingsTestHost()`; change `SyncSettingsTestHost` from `class` to `open class` (one token); add `@AndroidEntryPoint` + its import to `SyncSettingsCaptureHost`. To each of the **five** affected test classes add, class-level only: `@HiltAndroidTest`, `@Config(application = HiltTestApplication::class)` (merged into the existing `@Config` on `SyncSettingsScreenshotCaptureTest`), `@get:Rule @JvmField val hiltRule = HiltAndroidRule(this)`, and imports. Substitute `SyncSettingsTestHost` → `SyncSettingsHiltTestHost` at the **six** `Robolectric.buildActivity(...)` sites named in D5 and nowhere else.
+
+**Why the whole of `SyncSettingsHarnessSmokeTest` is wrapped, including the sub-tests that attach the Gpodder/Nextcloud dialogs and use nothing from Hilt:** Robolectric's `Application` is chosen **per class**, not per test, and only one of that class's six tests attaches `SynchronizationPreferencesFragment` — so class-level `@Config(application = HiltTestApplication::class)` is the only available granularity, and splitting the class would be a rewrite of the frozen suite, which D7 forbids. It is safe for the other five because `HiltTestApplication` **is** an ordinary `Application` that materialises no component until something asks for one: a test that never calls `hiltRule.inject()` and attaches no `@AndroidEntryPoint` type never reaches `TestApplicationComponentManager.generatedComponent()` (D11 reason 1, read in the other direction). That is *checked*, not merely argued — AC1 requires this class's per-class count to stay **6** with unchanged assertions at every step from 4 onward, and Implementation Notes records the observation for the five non-Hilt sub-tests explicitly.
+
+**`git diff origin/develop -- ui/preferences/src/main/` at the end of this step shows only Step 2's two new files, and no modified file.** That is the criterion (AC11) that makes this step provably behavior-neutral. Tests: none added; **all 62 green**, per-class counts unchanged row for row.
+
+**Step 5 — `@HiltViewModel` on `SynchronizationPreferencesViewModel`; its five static reads route through the injected seam.** Touches `ui/preferences/src/main/java/.../synchronization/SynchronizationPreferencesViewModel.kt` only.
+Add `@HiltViewModel` and `@Inject constructor(private val repository: SyncSettingsRepository)`, plus the no-arg secondary constructor of **D6**. Replace `SynchronizationSettings.isProviderConnected()` (`:41`), `isLastSyncSuccessful()` (`:43,:58`) and `getLastSyncAttempt()` (`:44,:59`) with `repository.*`; remove the now-unused `SynchronizationSettings` import. **Everything else in the file is untouched** — the `internal SyncServiceEventSubscriber` stays `internal` (bytecode-public, EventBus reflection needs it), `ThreadMode.POSTING`/`sticky = true` stay, and `stateIn(viewModelScope, SharingStarted.WhileSubscribed(0, 0), null)`'s two zeros stay (README conventions 15). The fragment is **not** touched, so acquisition still goes through the default factory and D6's secondary constructor — which is exactly why this step is separable. **`SynchronizationPreferencesViewModelTest`'s seven tests are this step's equivalence proof and are not edited.** Tests: none added; **62**.
+
+**Step 6 — `@AndroidEntryPoint` on `SynchronizationPreferencesFragment` and on `PreferenceActivity`; the three queue call sites go through the injected seam.** Touches `ui/preferences/src/main/java/.../synchronization/SynchronizationPreferencesFragment.kt` and `app/src/main/java/de/danoeh/antennapod/ui/screen/preferences/PreferenceActivity.java`.
+Add `@AndroidEntryPoint` to the fragment and `@Inject lateinit var syncSettings: SyncSettingsRepository`. Replace `SynchronizationQueue.instance!!.syncImmediately()` (`:121`), `.fullSync()` (`:125`) and `.clear()` (`:130`) with `syncSettings.syncImmediately()`, `syncSettings.fullSync()` and `syncSettings.clearSyncQueue()`, **at the same source positions and in the same statement order** — in particular the logout listener keeps `SynchronizationCredentials.clear()` **before** the queue call, which `SynchronizationPreferencesFragmentCharacterizationTest.kt:221`'s `onCall` hook and Step 3's test 2 both discriminate on. Remove the now-unused `SynchronizationQueue` import. `ViewModelProvider(this)[…]` at `:34` needs **no textual change** — it now resolves `HiltViewModelFactory`. `updateScreen()`, the `SynchronizationCredentials` calls and `SynchronizationSettings.setSelectedSyncProvider` are **not** touched (D14).
+
+`PreferenceActivity.java` gets `@AndroidEntryPoint` and its import and **nothing else** — the ten-fragment ladder (`:63-88`) and `onSearchResultClicked` (`:149-160`) are byte-identical (AC12). Run `./gradlew :app:testPlayDebugUnitTest --rerun` and compare per-class counts against Step 1's record (AC18 — and note what that does *not* prove, per D15). Re-run `./gradlew checkstyle lint` — this is the second point at which D10's ladder may be needed, now with `@AndroidEntryPoint`-generated code in play. Tests: none added; **all 62 green with unchanged assertions** — this is the milestone's equivalence-proving diff. **These two lines change the production host of ten fragments, nine of which nothing here covers — so this commit is not reported as verified until Step 6a's gate has run.**
+
+**Step 6a — The `PreferenceActivity` host gate: the pre-existing instrumented `PreferencesTest` re-run, plus the manual app run `AGENTS.md` requires. No repo diff. Runs immediately after Step 6's commit, before Step 7.**
+Per **D15**. No file is created or edited in this step — in particular `app/src/androidTest/**` stays byte-identical (AC24, AC17).
+
+**(i) The existing instrumented suite, after-half.** Run `PreferencesTest` (22 `@Test`, real `ActivityTestRule<PreferenceActivity>`, drives `MainPreferencesFragment` → User Interface / Playback / Downloads / Auto-download) on the same device/emulator as Step 1 and **compare per-test results to Step 1's record, row for row**. The comparison is the criterion, not the absolute result.
+
+**(ii) The manual app run.** `./gradlew --console=plain :app:installPlayDebug && adb shell monkey -p de.danoeh.antennapod.debug 1` — `AGENTS.md`'s exact command, not a substitute. Then walk this checklist, recording pass/fail per line in Implementation Notes:
+1. Open Settings — `MainPreferencesFragment` renders (`PreferenceActivity.onCreate:49-52`, the ladder's entry point).
+2. **Synchronization** (`R.xml.preferences_synchronization`, the one Hilt fragment) — opens; ActionBar title and subtitle render; the provider-chooser dialog opens and cancels; the sync row is tappable. This is the `Hilt_PreferenceActivity` → `ToolbarActivity` → `Hilt_SynchronizationPreferencesFragment` → `AnimatedPreferenceFragment` chain that no automated test in this milestone touches.
+3. **User Interface** (`:66-67`) and **Playback** (`:76-77`) — two non-Hilt siblings from the ladder open and render under the now-Hilt host.
+4. **Back stack** — the up arrow pops rather than finishing the Activity (`onOptionsItemSelected:134-146`), checked once from a non-Hilt sibling and once from the Sync screen.
+5. **Settings search** — one result routed through `onSearchResultClicked` (`:149-160`) into a non-Hilt screen and one into the Sync screen; in both the target screen opens **and the preference is highlighted**, which is the `result.highlight(fragment)` branch at `:160-161` acting on the instance `openScreen` returned — the one path where a wrong fragment instance fails silently instead of crashing.
+6. **Notification Preferences** — tapped only to confirm the system notification-settings Intent still fires. It is **not** a fragment-attach probe: `openScreen` short-circuits to that Intent when `SDK_INT >= 26` (`:119-124`) and never attaches `NotificationPreferencesFragment`.
+
+**Stop-condition, in D3's form.** Any red in (i) that was green at Step 1, or any failed checklist line in (ii), is a **full stop**: capture `adb logcat -d | grep "de.danoeh.antennapod" | tail -20` (`AGENTS.md`), paste it and the failing step into Implementation Notes, and escalate to José before Step 7. Do not relax the checklist and do not proceed on the theory that the Sync screen works. Tests: none added; **62**.
+
+**Step 7 — Prove the graph is real, not a silent default-factory fallback.** Creates `ui/preferences/src/test/java/.../synchronization/SyncSettingsHiltGraphTest.kt`.
+Per D9. `@HiltAndroidTest`, `@Config(application = HiltTestApplication::class)`, `HiltAndroidRule`, `@UninstallModules(SyncSettingsModule::class)`, and a **file-private** `RecordingSyncSettingsRepository` supplied via `@BindValue` — file-private, not its own file, matching M17's `ManualDispatcher` precedent. Adds **2** tests, both named in D9. Suite **62 → 64**.
+
+**Step 8 — CI-bar verification sweep. No repo diff.**
+Run every acceptance criterion's command and paste the output: both flavoured `:ui:preferences` test tasks, `:app:testPlayDebugUnitTest`, `assemblePlayDebug` + `assemblePlayRelease` + `assembleFreeRelease` + `assemblePlayDebugAndroidTest`, `checkstyle lint`, `ktlintCheck`. Re-capture both dependency configurations and diff against Step 1. Re-run the per-file `!!` greps and every AC5 grep — noting that AC5's counts are now stated so each command yields a single scalar. Record which D10 rung, if any, was used. **Restate the Step-6a host-gate result here in one line** (D15, AC24) — it is not re-run at Step 8, since no production code changed after Step 6 — and restate, in the same place, that `assemblePlayDebugAndroidTest` **assembles** `PreferencesTest` and never runs it, so CI carries no standing guard for the other nine preference fragments.
+
+**Step 9 — Documentation.** Touches `ui/preferences/README.md`, `tasks/antennapod-sync-settings-di-milestone-18.md`, `tasks/antennapod-sync-settings-modernization-future-work.md`, `features/antennapod-sync-settings-di-milestone-18.checkpoint.md`.
+Add module conventions numbered **from 17**, phrased as long-term-stable module rules with no milestone number and no task-file reference (`AGENTS.md`): the seam reads `SynchronizationQueue.instance` **per call and never caches it**, because the module's tests install their double by assigning that global (D4); `HiltTestApplication` is applied per test class via `@Config`, never via a module `robolectric.properties`, because this module's whole test source set is one slice (D11); `SynchronizationPreferencesViewModel`'s no-arg secondary constructor exists only so the frozen suite can construct it, and production acquisition must go through `HiltViewModelFactory` (D6); and — the convention D15 earned — **every `PreferenceFragmentCompat` in this module is hosted in production by `:app`'s shared `PreferenceActivity`, which hosts ten of them, so annotating one fragment `@AndroidEntryPoint` changes the host class for all ten, and that ripple is verified by running the app and `:app`'s existing instrumented `PreferencesTest`, not by this module's unit tests.** Update the future-work file: retire the `kotlinx-coroutines-test` expectation from the Milestone 18 row (D8), record the **four deferred `SynchronizationQueue.instance!!` sites** by file and line against Milestone 19/20 (D5), record that `SynchronizationCredentials` is still unwrapped and why (D14), record that D6's secondary constructor is removed at Milestone 20, and **record D15's accepted residual risk by name** — `PreferenceActivity` is now a Hilt host for ten fragments with no standing automated guard (CI assembles instrumented tests but never runs them), and five of the nine siblings were never opened even manually.
+
+---
+
+### File Scope
+
+The reviewer rejects any diff touching a file not on this list.
+
+**Modified — build surface (3 files):**
+- `gradle/libs.versions.toml` (Step 4 — **exactly one** new `[libraries]` entry, `hilt-android-testing`, on the existing `hilt` version ref; **no new `[versions]`, no new `[plugins]`**)
+- `ui/preferences/build.gradle` (Step 2 — 2 plugin aliases, `hilt { enableTransformForLocalTests = true }`, `implementation libs.hilt.android`, `ksp libs.hilt.compiler`; Step 4 — `testImplementation libs.hilt.android.testing`, `kspTest libs.hilt.compiler`; **conditionally** a `lint { }` block per D10's ladder, only if Step 2 or 6 goes red)
+- `app/build.gradle` (**conditional and only for D10 rung (i)** — a `lint { checkGeneratedSources = false }` block if and only if `:app`'s lint flags the aggregated generated component. No other change to this file; adding a dependency, plugin or source change here fails scope review.)
+
+**Created — production source (exactly 2 files):**
+- `ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SyncSettingsRepository.kt` (Step 2 — the six-method interface and `DefaultSyncSettingsRepository`)
+- `ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SyncSettingsModule.kt` (Step 2 — `@Module @InstallIn(SingletonComponent::class)` + `@Binds`)
+
+**Modified — production source (exactly 3 files):**
+- `ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SynchronizationPreferencesViewModel.kt` (Step 5)
+- `ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SynchronizationPreferencesFragment.kt` (Step 6)
+- `app/src/main/java/de/danoeh/antennapod/ui/screen/preferences/PreferenceActivity.java` (Step 6 — **exactly two added lines**: the `@AndroidEntryPoint` annotation and its import. Nothing else in this file may change.)
+
+**Created — test source (exactly 4 files):**
+- `ui/preferences/src/test/java/.../synchronization/DefaultSyncSettingsRepositoryTest.kt` (Step 2)
+- `ui/preferences/src/test/java/.../synchronization/SyncSettingsSeamCharacterizationTest.kt` (Step 3; repointed at the Hilt host in Step 4)
+- `ui/preferences/src/test/java/.../synchronization/SyncSettingsHiltTestHost.kt` (Step 4 — `@AndroidEntryPoint class SyncSettingsHiltTestHost : SyncSettingsTestHost()`)
+- `ui/preferences/src/test/java/.../synchronization/SyncSettingsHiltGraphTest.kt` (Step 7 — `RecordingSyncSettingsRepository` is **file-private inside it**, not a fifth file; a `RecordingSyncSettingsRepository.kt` in the created-files listing fails AC16)
+
+**Modified — test source (exactly 6 files, all in Step 4, all additive):**
+- `SyncSettingsTestHost.kt` — `class` → `open class`. One token. Nothing else.
+- `SyncSettingsCaptureHost.kt` — `@AndroidEntryPoint` + its import. Nothing else.
+- `SynchronizationPreferencesFragmentCharacterizationTest.kt` — class-level `@HiltAndroidTest` + `@Config(application = HiltTestApplication::class)` + the `hiltRule` field + imports, and **1** host identifier substitution in the private `attachFragment()` helper.
+- `SynchronizationPreferencesFragmentLifecycleTest.kt` — the same class-level additions, and **4** host identifier substitutions (`:69, :77, :94, :110`).
+- `SyncSettingsHarnessSmokeTest.kt` — the same class-level additions, and **1** host identifier substitution (`:53`, the only test in the class that attaches `SynchronizationPreferencesFragment`).
+- `SyncSettingsScreenshotCaptureTest.kt` — `@HiltAndroidTest`, `application = HiltTestApplication::class` **added into the existing `@Config`**, the `hiltRule` field, imports. **Zero** host substitutions.
+
+**Modified — documentation (Step 9, 4 files):**
+- `ui/preferences/README.md`
+- `tasks/antennapod-sync-settings-di-milestone-18.md`
+- `tasks/antennapod-sync-settings-modernization-future-work.md`
+- `features/antennapod-sync-settings-di-milestone-18.checkpoint.md`
+
+**Byte-identical — a diff touching any of these means the plan was wrong and the task is re-planned, not patched.** These **nine** files under `ui/preferences/src/test/java/.../screen/synchronization/` stay untouched: `SynchronizationPreferencesViewModelTest.kt` (D6 exists so this file need not change), `AuthenticationDialogCharacterizationTest.kt`, **`AuthenticationDialogJavaInteropTest.java`** (the Java interop oracle — untouched also because KSP cannot process it, D5), `GpodderAuthenticationFragmentCharacterizationTest.kt`, `GpodderAuthenticationFragmentAsyncCharacterizationTest.kt`, `GpodderAuthenticationFragmentCancellationTest.kt`, `NextcloudAuthenticationFragmentCharacterizationTest.kt`, `RecordingSynchronizationQueue.kt`, `FakeGpodnetService.kt`.
+
+**No file is created or modified for the D15 host gate.** Step 6a runs two existing instruments and adds nothing: **`app/src/androidTest/**` stays byte-identical**, in particular `app/src/androidTest/java/de/test/antennapod/ui/PreferencesTest.java`, which is *run* before and after and never edited (AC24). A new `androidTest` file appearing in the diff fails scope review as surely as an out-of-scope production edit would.
+
+**Also not in scope:** `GpodderAuthenticationFragment.kt`, `NextcloudAuthenticationFragment.kt`, `AuthenticationDialog.kt` (D5); every other file under `ui/preferences/src/main/`, including `NotificationPreferencesFragment.java`, `AnimatedPreferenceFragment.java`, `screen/bugreport/**`, `res/xml/preferences_synchronization.xml` and every layout; **all of `:storage:preferences`** (D2 — wrap, do not convert); **all of `:net:sync:service` and `:net:sync:service-interface`** — `SynchronizationQueue`, `SynchronizationQueueImpl`, `SynchronizationQueueStub` and `SyncService` are untouched; `:event`, `:model`, `:ui:common`; every file in `app/**` except `PreferenceActivity.java` (and `app/build.gradle` under D10 rung (i) only) — in particular **`ClientConfigurator.java` and `PodcastApp.java` are not edited**; `app-wearos/**`; root `build.gradle`, `common.gradle`, `playFlavor.gradle`, `settings.gradle`, `.editorconfig`, `.github/**`, `config/**`, `gradle/wrapper/**`, `gradle.properties`; **no `robolectric.properties` is created anywhere** (D11); **no `lint-baseline*.xml` is created anywhere** (D10); every other milestone's task and checkpoint file.
+
+**No new user-visible string is added**, so `AGENTS.md`'s `:ui:i18n` rule is not triggered — and adding one would itself be out of scope. **No code comments are added** to any file (`AGENTS.md`); every rationale lives in the README conventions and this task file.
+
+---
+
+### Acceptance Criteria
+
+Track: `di` on `:ui:preferences` `screen/synchronization/`. Every item is a command whose output the reviewer can check independently. Where a criterion states a number, that number is the pass condition. **24 criteria** (AC24 added in red-team Loop 1).
+
+**The regression net stays green, and not one assertion changes**
+
+- [ ] **AC1** — `./gradlew :ui:preferences:testFreeDebugUnitTest --rerun` and `./gradlew :ui:preferences:testPlayDebugUnitTest --rerun`, run as two separate invocations, are BUILD SUCCESSFUL with **0 failures, 0 errors, 0 skipped** at the end of **every** step from 2 onward, with the **same per-class counts as Step 1's baseline, row for row**, for all **eleven** pre-existing classes (Gpodder Char 9, SyncPrefs Char 8, ViewModel 7, Gpodder Async 6, Nextcloud 6, Smoke 6, AuthDialog 4, Lifecycle 4, Screenshot 3, JavaInterop 1, Gpodder Cancellation 1 = **55**). **No pre-existing per-class count may change in either direction.** The three new classes end at `DefaultSyncSettingsRepositoryTest` **3**, `SyncSettingsSeamCharacterizationTest` **4**, `SyncSettingsHiltGraphTest` **2** — fourteen classes, **64** tests. CI never runs the Free flavour for this module, so both are run locally.
+- [ ] **AC2** — The total is **55** after Step 1, **58** after Step 2, **62** after Steps 3–6, and **64** after Steps 7–9. Each figure is re-derived from a real run; a divergence is a finding recorded before proceeding, not a number adjusted to match.
+- [ ] **AC3** — **The strongest equivalence signal in this milestone.** `git diff origin/develop -- ui/preferences/src/test/ | grep -c '^[-+].*assert'` returns **0**: not one line containing an assertion is added, removed or changed in any pre-existing test file. And `git diff origin/develop -- ui/preferences/src/test/java/.../SynchronizationPreferencesFragmentLifecycleTest.kt ui/preferences/src/test/java/.../SyncSettingsHarnessSmokeTest.kt ui/preferences/src/test/java/.../SynchronizationPreferencesFragmentCharacterizationTest.kt ui/preferences/src/test/java/.../SyncSettingsScreenshotCaptureTest.kt` contains **only**: import lines, the class-level `@HiltAndroidTest` / `@Config` / `hiltRule` additions, and **exactly six** changed lines whose sole difference is the identifier `SyncSettingsTestHost` → `SyncSettingsHiltTestHost` (4 in `…LifecycleTest`, 1 in `…SmokeTest`, 1 in `…CharacterizationTest`'s `attachFragment()` helper; **0** in `…ScreenshotCaptureTest`). A seventh substitution, or a substitution in any other file, fails this criterion.
+- [ ] **AC4** — `git diff --diff-filter=M --name-only origin/develop -- ui/preferences/src/test/` lists **exactly six** files: the four test classes of AC3 plus `SyncSettingsTestHost.kt` and `SyncSettingsCaptureHost.kt`. The **nine** files named byte-identical in File Scope do not appear — in particular `SynchronizationPreferencesViewModelTest.kt` and `AuthenticationDialogJavaInteropTest.java`. `git diff --diff-filter=A --name-only origin/develop -- ui/preferences/src/test/` lists **exactly four** files and nothing else. `git diff --diff-filter=D --name-only origin/develop -- ui/preferences/src/test/` is **empty**; no test method is deleted anywhere in the milestone.
+
+**The graph is real, and it assembles across the processor boundary**
+
+- [ ] **AC5** — Greps that returned **zero** under M17's AC18 now return exactly these counts. **Every count below is either a `-c` on a glob that matches exactly one named file (output: one `path:N` line) or a `-l` file count — no `-c` is run across a glob matching more than one file, so every figure a reviewer reads is a single scalar.** (Corrected in red-team Loop 1: the `@AndroidEntryPoint` test-source clause and the `@Inject` clause previously stated summed totals for `-c` commands that print one line per file.)
+  - `git grep -c "@AndroidEntryPoint" -- 'ui/preferences/src/main/**'` → exactly one line, `…/synchronization/SynchronizationPreferencesFragment.kt:1`.
+  - `git grep -c "@HiltViewModel" -- 'ui/preferences/src/main/**'` → exactly one line, `…/synchronization/SynchronizationPreferencesViewModel.kt:1`.
+  - `git grep -c "@Module" -- 'ui/preferences/src/main/**'` and `git grep -c "@InstallIn" -- 'ui/preferences/src/main/**'` → exactly one line each, `…/synchronization/SyncSettingsModule.kt:1`.
+  - `@Inject` spans **three** files, so it is checked as a list rather than a per-file count: `git grep -l "@Inject" -- 'ui/preferences/src/main/**'` lists **exactly 3** files — `SynchronizationPreferencesViewModel.kt` (the `@Inject constructor`), `SyncSettingsRepository.kt` (`DefaultSyncSettingsRepository`'s `@Inject constructor()`), `SynchronizationPreferencesFragment.kt` (the `@Inject lateinit var` field) — **one occurrence each**. The summed form, if the reviewer prefers one number: `git grep -c "@Inject" -- 'ui/preferences/src/main/**' | awk -F: '{s+=$2} END{print s}'` prints **3**.
+  - In `:app`: `git grep -n "@AndroidEntryPoint" -- 'app/src/main/**'` → **exactly one line**, in `PreferenceActivity.java`; `git grep -n "@HiltAndroidApp" -- 'app/src/main/**'` → **exactly one line**, in `PodcastApp.java`, unchanged from `origin/develop`.
+  - In the test source set: `git grep -l "@AndroidEntryPoint" -- 'ui/preferences/src/test/**'` lists **exactly 2** files — `SyncSettingsHiltTestHost.kt` and `SyncSettingsCaptureHost.kt` — **one occurrence each** (summed total **2**). `git grep -l "@HiltAndroidTest" -- 'ui/preferences/src/test/**'` lists **exactly 6** files: the four pre-existing classes named in AC3, plus `SyncSettingsSeamCharacterizationTest.kt` and `SyncSettingsHiltGraphTest.kt`.
+- [ ] **AC6** — **The mixed-processor gate (D3).** At the end of Step 2, `./gradlew :app:assembleDebug`, `./gradlew assemblePlayDebug` and `./gradlew assemblePlayDebugAndroidTest` are all BUILD SUCCESSFUL **and** `grep -rl "SyncSettingsModule" app/build/generated/` returns at least one generated Dagger/Hilt source under `:app` (**amended by José 2026-09-16** — the original target, `SyncSettingsRepository`, names an interface Dagger only emits once something consumes the binding, which Step 2 deliberately does not; `SyncSettingsModule` is the string that actually proves aggregation, confirmed present in `:app`'s generated `PodcastApp_HiltComponents.java`/`PodcastApp_ComponentTreeDeps.java`). All four outputs are pasted into Implementation Notes. A green build without the generated-source hit does **not** satisfy this criterion — it does not prove the binding aggregated. If any of the four fails, the milestone stops and escalates to José per D3; a `kotlin-android`/kapt substitution appearing in the diff fails this criterion outright.
+- [ ] **AC7** — **The graph is not a silent fallback (D9).** `SyncSettingsHiltGraphTest`'s two tests are green at the end of Steps 7–9: `testFragmentFieldInjectionReceivesTheBoundRepository` (the `@BindValue` fake records `syncImmediately`; the `RecordingSynchronizationQueue` on the global records nothing) and `testViewModelIsConstructedByHiltWithTheBoundRepository` (the ActionBar subtitle renders the fake's last-sync report, which is only reachable if `HiltViewModelFactory` — not `NewInstanceFactory` calling D6's no-arg constructor — built the ViewModel).
+- [ ] **AC8** — `git diff origin/develop -- gradle/libs.versions.toml` adds **exactly one** `[libraries]` line — `hilt-android-testing` on `version.ref = "hilt"` — and **nothing else**: no new `[versions]` ref, no new `[plugins]` entry, no `kotlinx-coroutines-test`, no Turbine, no MockWebServer, no `mockito-core` declaration (D8). `git grep -n "coroutines-test\|turbine\|runTest\|TestDispatcher\|StandardTestDispatcher\|UnconfinedTestDispatcher\|Dispatchers.setMain" -- 'ui/preferences/**' '*.gradle' '*.toml'` returns **zero**.
+- [ ] **AC9** — `git diff origin/develop -- ui/preferences/build.gradle` adds exactly: 2 plugin aliases, the 3-line `hilt { }` block, `implementation libs.hilt.android`, `ksp libs.hilt.compiler`, `testImplementation libs.hilt.android.testing`, `kspTest libs.hilt.compiler` — plus, **only if D10's ladder was used**, one `lint { }` block whose contents are named in Implementation Notes alongside the failing lint output that forced it. No `kapt` line, no `annotationProcessor` line for Hilt, no flavoured `kspPlayDebug`/`kspFreeDebug` configuration, no per-artifact version.
+
+**Characterization coverage lands before the consumers change**
+
+- [ ] **AC10** — At the end of **Step 3**, `git diff origin/develop -- ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SynchronizationPreferencesFragment.kt ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SynchronizationPreferencesViewModel.kt` is **empty**, and both flavoured test tasks are green at **62**. A Step-3 commit that also changes a consumer fails this criterion outright — that emptiness is what makes the four gap tests records of *current* behavior rather than of the plan's expectation of it. All four are named in Implementation Notes with the behavior each pins, and each is confirmed green at Steps 3, 6 and 8.
+- [ ] **AC11** — **The test-infra step is provably behavior-neutral (D7).** At the end of **Step 4**, `git diff --diff-filter=M --name-only origin/develop -- ui/preferences/src/main/` is **empty** and `git diff --diff-filter=A --name-only origin/develop -- ui/preferences/src/main/` lists exactly `SyncSettingsRepository.kt` and `SyncSettingsModule.kt` — neither of which anything consumes yet. All 62 tests are green with per-class counts identical to Step 3.
+- [ ] **AC12** — **No public API break visible to Java callers outside the module.** `./gradlew assemblePlayDebug` is green; `AuthenticationDialogJavaInteropTest.java` is byte-identical and its one test green; `SynchronizationPreferencesFragment` stays `public` with a no-arg constructor and still extends `AnimatedPreferenceFragment` through the inserted `Hilt_` superclass, pinned by `testFragmentRemainsInstantiableByFragmentFactory` green at Steps 3 **and** 6. `git diff origin/develop -- app/src/main/java/de/danoeh/antennapod/ui/screen/preferences/PreferenceActivity.java` shows **exactly two added lines and zero changed lines** — the annotation and its import; the ten-fragment ladder (`:63-88`) and `onSearchResultClicked` (`:149-160`) are untouched. `AuthenticationDialog`'s two `:app` subclasses still compile unedited.
+- [ ] **AC13** — **`AnimatedPreferenceFragment` survives the `Hilt_` superclass (gap 3).** `testSharedAxisTransitionsAndSurfaceBackgroundAreAppliedToTheAttachedFragment` is green at the end of Step 3 (no Hilt superclass) **and** at the end of Step 6 (with it), asserting all four `MaterialSharedAxis` transitions and the `colorSurface` root background. A red at Step 6 is a finding, not a test to relax.
+- [ ] **AC14** — **The queue is read per call, not cached (D4).** `testQueueIsResolvedFromTheGlobalAtEachClickNotCachedAtAttach` is green at the end of Steps 3 **and** 6, and `testQueueCommandsDelegateToWhicheverQueueIsInstalledAtCallTime` is green from Step 2 on. `git grep -n "SynchronizationQueue" -- 'ui/preferences/src/main/**'` returns hits **only** in `SyncSettingsRepository.kt` — the fragment no longer names the type at all.
+- [ ] **AC15** — **Nothing in the graph can read the global before `ClientConfigurator` runs (gap 1, D12).** `git grep -n "@Singleton\|@ActivityRetainedScoped\|@ViewModelScoped\|@ActivityScoped" -- 'ui/preferences/src/main/**'` returns **zero** — the binding is unscoped. `DefaultSyncSettingsRepository` declares **no property** of type `SynchronizationQueue`, `SharedPreferences` or `Context`; its only member touching the global is the private `queue` getter. Both are verifiable by reading a 40-line file, and Implementation Notes states plainly that gap 1 has no test because the only place it could have one is `PodcastApp.onCreate` in `:app`, outside File Scope.
+
+**Idiomatic target achieved, with committed numbers**
+
+- [ ] **AC16** — At the end of Step 8, `grep -o '!!' <file> | wc -l` per file reads exactly: `SynchronizationPreferencesFragment.kt` **19** (down from 22), `GpodderAuthenticationFragment.kt` **11** (unchanged), `NextcloudAuthenticationFragment.kt` **7** (unchanged), `SynchronizationPreferencesViewModel.kt` **0** (unchanged), `AuthenticationDialog.kt` **0** (unchanged), `SyncSettingsRepository.kt` **1** (new), `SyncSettingsModule.kt` **0** (new) — slice total **38**, down from **40**. A count **lower** than 19 in the fragment fails this criterion as surely as a higher one: the 11 `findPreference!!` sites and the Fragment-API preserved NPEs under README convention 4 all **stay** (D5). `git grep -c "SynchronizationQueue.instance" -- 'ui/preferences/src/main/**'` → **1**, in `SyncSettingsRepository.kt` (down from 7).
+- [ ] **AC17** — `git diff --name-only origin/develop` lists **only** File Scope files. `git diff origin/develop -- storage/ net/ event/ model/ ui/common/ app-wearos/ settings.gradle build.gradle common.gradle playFlavor.gradle` is **empty** — in particular `SynchronizationSettings.java`, `SynchronizationCredentials.java`, `SynchronizationQueue.kt`, `SynchronizationQueueImpl.kt` and `ClientConfigurator.java` are untouched. `find . -name 'robolectric.properties'` and `find . -name 'lint-baseline*.xml'` both return **nothing** (D10, D11). `git grep -n "@Composable\|ComposeView\|collectAsState" -- 'ui/preferences/src/main/java/**/synchronization/'` returns **zero** — Milestone 20 owns Compose.
+- [ ] **AC18** — **`:app`'s existing unit tests do not ripple — and this criterion's reach is stated, not overstated.** `./gradlew :app:testPlayDebugUnitTest --rerun` is green with the **same per-class counts** at Step 1 and at Step 6, for all four `:app` test classes. Both tables are pasted into Implementation Notes. **What this proves and what it does not** (corrected in red-team Loop 1): D13's baseline records those four classes as *none preference-related*, so this criterion can only show that `:app`'s existing unit tests still pass — it is **structurally incapable** of failing because of the `@AndroidEntryPoint` on `PreferenceActivity`, and it must not be read or reported as having closed Research Unknown 5(e). The ripple evidence is **AC24**, and the accepted residual risk is **D15**. The earlier phrasing of this AC ("the measurement Research could only infer from dependency declarations") overclaimed and is withdrawn: the dependency-declaration inference stands for `:app`'s *unit-test* source set only.
+- [ ] **AC19** — `SyncSettingsScreenshotCaptureTest`'s three tests are green at every step from 4 onward, under `HiltTestApplication` and `@GraphicsMode(NATIVE)` together, and Implementation Notes states that this milestone changes **no pixels**: the capture host's disconnected/no-sticky path renders the same subtitle before and after, because the seam delegates to the same statics. No new before/after image is captured; Milestone 20 owns the after-shot.
+- [ ] **AC20** — `./gradlew ktlintCheck` is BUILD SUCCESSFUL at the end of **every** step. No subject-less `when` opportunity is introduced or missed — the seam is six single-expression delegations with no conditional dispatch, so the idiom does not arise; this is asserted, not assumed.
+
+**The build is green at CI's real bar**
+
+- [ ] **AC21** — At the end of Steps 2, 6 and 8, all four CI build tasks are BUILD SUCCESSFUL and the output is pasted: `./gradlew assemblePlayDebug`, `./gradlew assemblePlayRelease`, `./gradlew assembleFreeRelease`, `./gradlew assemblePlayDebugAndroidTest`. `./gradlew :app:assembleDebug` is BUILD SUCCESSFUL at the end of **every** step.
+- [ ] **AC22** — `./gradlew checkstyle lint` is BUILD SUCCESSFUL at the end of Steps 2, 6 and 8. If it was red on first run, Implementation Notes names the exact failing check(s), the D10 rung applied, and the full failing output — and no rung above the lowest applicable one was used. `checkGeneratedSources` remains `true` in `common.gradle` for every module (a change there fails AC17).
+- [ ] **AC23** — The Step-1 vs Step-8 diff of `:ui:preferences:dependencies --configuration playDebugCompileClasspath` and `--configuration playDebugUnitTestRuntimeClasspath` is pasted into Implementation Notes. The unit-test runtime classpath, which contained **zero** `com.google.dagger:*` and zero `javax.inject` at Step 1, now contains `hilt-android`, `hilt-android-testing`, `dagger` and `javax.inject:1`, all at `strictly 2.58` / `1`. **No other artifact's resolved version moves** — in particular coroutines stays at 1.9.0, lifecycle at 2.9.4 and Robolectric at 4.16. Any unexpected movement is a finding recorded before proceeding.
+
+**The shared production host survives the Hilt transform** *(added in red-team Loop 1)*
+
+- [ ] **AC24** — **The `PreferenceActivity` host gate (D15, Step 6a).** Three things, all recorded in Implementation Notes:
+  **(i) The pre-existing instrumented suite, before and after.** `app/src/androidTest/java/de/test/antennapod/ui/PreferencesTest.java` (**22 `@Test`**, `ActivityTestRule<PreferenceActivity>`, drives `MainPreferencesFragment` → User Interface / Playback / Downloads / Auto-download) is run on a real device or emulator at **Step 1** and again at **Step 6a**, on the same device, and the **per-test results match row for row**. A test that was red at Step 1 and is red at Step 6a is a recorded pre-existing condition and does not fail this criterion; a test that was green at Step 1 and is red at Step 6a is a **full stop** per D15, with `adb logcat -d | grep "de.danoeh.antennapod" | tail -20` pasted.
+  **(ii) The manual app run `AGENTS.md` requires.** `./gradlew --console=plain :app:installPlayDebug && adb shell monkey -p de.danoeh.antennapod.debug 1` succeeds, and **all six checklist lines of Step 6a(ii) are recorded pass** — Settings/`MainPreferencesFragment`, the Sync Settings screen including its provider-chooser dialog, User Interface **and** Playback as non-Hilt siblings, the up-arrow back-stack pop from both a sibling and the Sync screen, both search-result routes through `onSearchResultClicked` **with the preference highlighted**, and the Notification Preferences Intent still firing. A checklist line recorded as "not checked" fails this criterion; Notification Preferences recorded as a *fragment-attach* pass also fails it, because `openScreen` short-circuits to the system Intent above API 26 (`PreferenceActivity.java:119-124`).
+  **(iii) The scope of the gate is stated, not implied.** Implementation Notes carries D15's residual-risk paragraph verbatim: five of the nine sibling fragments (Import/Export, Swipe, Automatic Deletion, Parental Control, `NotificationPreferencesFragment`) are opened by **neither** half; neither half runs in CI (`assemblePlayDebugAndroidTest` assembles instrumented tests and never runs them), so **nothing added here guards a future regression**; and no automated unit test of `PreferenceActivity` is added. `git diff --name-only origin/develop -- app/src/androidTest/` is **empty** — the instrument is run, never edited.
+
+**Not applicable to this milestone, asserted rather than assumed.** **Accessibility** (content descriptions, dynamic type) and **dark mode** (no hardcoded colors) attach to the `compose` track's UI work: this milestone creates no composable, no layout and no `View`, changes no string, no drawable and no colour, and touches no `res/` file at all (AC17) — the screen renders through the same `PreferenceFragmentCompat` and the same `:ui:i18n` resources as before. Those bars bind Milestone 20 and are recorded there, not dropped. **Paparazzi snapshots**: no new composable exists, and Milestone 16's attempt did not ship (see the future-work file's Milestone 20 row); Milestone 20 still owns both the mechanism choice and the snapshot suite. **Instrumented back-stack and deep-link tests** attach to `navigation`, which is not requested and for which no Navigation Component exists anywhere in the repo. **No SDUI contract** is involved. **HSHD**: `SynchronizationCredentials` handles a gpodder.net username and password; this milestone does not wrap it, does not read it, adds **no logging statement of any kind**, and its one credential-touching test (`testLogoutRowClears…`) asserts only that the stored values became `null`, using no real credential value in any fixture.
+
+---
+
+### Milestone
+
+**Milestone 18 — `:ui:preferences` `screen/synchronization/`, `di` track.** Single milestone, single unified PR (code plus spec docs, per the M7/M9/M10/M12–M17 precedent), **ten steps in seven commits**: Steps 2, 3, 4, 5, 6, 7, 9. Steps 1, 6a and 8 produce no repo diff and fold into the following commit's Implementation Notes. The suite goes **55 → 64**: nine test methods across three new classes, four test files created, six modified with zero assertion changes, nine left byte-identical.
+
+Seventh of the sync-settings sequence (15 `kotlin` → 15b before-screenshot → 16 toolchain → 17 concurrency + MVVM → **18 `di`** → 19 `:storage:preferences` → 20 `compose`), and the seventeenth milestone in the portfolio overall. Branches from an `origin/develop` that already contains 15, 15b, 16, 17 and the Gap 16 follow-up.
+
+This is unaffiliated OSS portfolio work, so "milestone" is case-study structure, not invoicing. The angle it earns is the one DI retrofits almost never evidence: **the container was proved to be real.**
+
+1. **A DI graph stood up inside an equivalence proof, not instead of one.** The obvious way to add Hilt to a legacy module is to rewrite the tests around it, at which point "the tests still pass" means nothing. Here the 55-test suite that predates the graph is the oracle: nine of its fifteen files are byte-identical afterwards, six changed by class-level annotations and six one-identifier lines, and `git diff … | grep -c '^[-+].*assert'` returns **0**. The test-infra change lands in its own commit with an empty `src/main/` diff (AC11), so it is proved behavior-neutral *before* it is load-bearing.
+2. **The unverified build interaction was made the second step, not the last one.** `:app` processes Hilt with javac and is 100 % Java; `:ui:preferences` must process it with KSP. Cross-module aggregation is documented to work and had never been exercised in this repo. Rather than assume it, Step 2 lands the plugins and a real unconsumed binding and greps `:app`'s generated component for it — with a written stop-condition that escalates instead of improvising a kapt or Kotlin-on-`:app` migration under time pressure.
+3. **The graph could have been inert and every other criterion would still have passed.** D6's no-arg secondary constructor — forced by seven frozen `@Test` bodies that construct the ViewModel directly — is exactly the shape that lets a broken `@AndroidEntryPoint` fall back to `ViewModelProvider`'s default factory and go green. The milestone names that failure mode, writes the test that catches it (`@UninstallModules` + `@BindValue`, asserting the *bound* fake was used), and dates the affordance's removal to Milestone 20 rather than leaving it as an unexplained constructor.
+4. **What it does not claim.** The graph is a façade over `SynchronizationQueue.instance`, not a replacement for it: `ClientConfigurator.java:53` is still the owner, the global is still public and mutable, and the slice's seven direct reads became one rather than zero. Four `!!` sites in two dialog fragments are deferred by name, with the number (40 → 38, not 40 → 33) written down rather than rounded up. And the two-line `@AndroidEntryPoint` on `PreferenceActivity` changes the host of **ten** fragments while covering one: that ripple is gated by an app run and by `:app`'s pre-existing instrumented `PreferencesTest` rather than waved through on `:app`'s four unrelated unit-test classes (D15, AC24), and the part the gate does not reach — five sibling screens, and the fact that CI assembles instrumented tests without running them — is written down as accepted residual risk rather than left to be inferred from an AC that could not have failed.
+
+---
+
+### Out of Scope
+
+- **`@AndroidEntryPoint` on `GpodderAuthenticationFragment` or `NextcloudAuthenticationFragment`, and their four `SynchronizationQueue.instance!!` sites** (D5) — `GpodderAuthenticationFragment.kt:83,:238`, `NextcloudAuthenticationFragment.kt:95,:99`. Deferred by name into the future-work file at Step 9. Neither dialog has a ViewModel, and creating one is Milestone 20's scope.
+- **Wrapping `SynchronizationCredentials`, `SynchronizationSettings.setSelectedSyncProvider` or `getSelectedSyncProviderKey`** (D14). Their remaining callers are the two out-of-scope dialogs and `updateScreen()`, whose state hoisting is Milestone 20's. **OQ2.**
+- **Converting `:storage:preferences` to Kotlin, or touching it at all** (D2). 18 production call sites across four modules, 7 more in other modules' tests, no nullability annotations, and no test source set. Milestone 19's open question, on its own merits.
+- **Editing `ClientConfigurator.java` or `PodcastApp.java`** (D4). `SynchronizationQueue.instance`'s single assignment stays where it is; `@HiltAndroidApp` is already there and unchanged. Replacing `ClientConfigurator`'s static-init pattern repo-wide is not this milestone's mandate — the future-work file scopes it to "this slice specifically".
+- **Binding `SynchronizationQueueImpl`, or removing the `SynchronizationQueue.instance` global** (D4). Five test classes in three other modules depend on that global being assignable.
+- **Hilt-ifying `:ui:preferences` or `:app` broadly.** `PreferenceActivity` gets `@AndroidEntryPoint` because a Hilt fragment requires a Hilt host; the other nine preference fragments it hosts are untouched and stay non-Hilt. `NotificationPreferencesFragment.java`'s `SynchronizationSettings` call is not routed through the seam.
+- **New automated coverage for the nine other `PreferenceActivity`-hosted fragments** (D15). The host ripple is gated at Step 6a by running instruments that already exist — `:app`'s `PreferencesTest` and the app itself — and neither is edited, extended or moved into CI here. Writing a Hilt-enabled Robolectric harness for `PreferenceActivity` in `:app` would mean a fifth processor arrangement in a pure-Java module and is not attempted. The residual risk is accepted and named in D15, not closed.
+- **Cataloguing `kotlinx-coroutines-test` or Turbine** (D8). The inherited expectation is retired at Step 9, not silently carried forward. Nothing in this milestone suspends.
+- **Making any seam method `suspend`, or moving any read off the main thread** (D8). Two frozen lifecycle tests discriminate on the absence of a suspension point between `onStart()` and the first `render()`.
+- **A module `robolectric.properties`** (D11) or **a lint baseline** (D10). Neither is created, at any rung.
+- **Any Compose, `ComposeView`, theme bridge or snapshot test** (AC17). Milestone 20, including the still-open Paparazzi-vs-Robolectric-native-graphics choice Milestone 16 left it.
+- **Rewriting, extending or renaming any of the nine byte-identical test files**, including converting `AuthenticationDialogJavaInteropTest.java` to Kotlin.
+- **Reducing the 11 `findPreference<Preference>(…)!!` sites, or any `!!` outside the three queue call sites** (AC16). A `PreferenceFragmentCompat` API artifact that dies with Milestone 20.
+- **Fixing the `devices` data race, the `fromIdentifier` NPE, or the `ArrayAdapter` ViewHolder defect** (README convention 5). Pinned, not fixed.
+- **The `kotlin`, `gradle-kts`, `concurrency`, `compose` and `navigation` tracks.** Every build file stays Groovy; the slice is already Kotlin; M17 delivered `concurrency`; no Navigation Component exists anywhere in the repo.
+
+---
+
+### Open Questions
+
+| | Question | Status |
+|---|---|---|
+| **OQ1** | The "zero `@Test` body changes" lock cannot be met literally — six host-identifier substitutions are required, five of them inside `@Test` bodies | Open, **non-blocking**; plan proceeds on the recommendation below unless José says otherwise |
+| **OQ2** | `SynchronizationCredentials` is not wrapped this milestone, though the milestone description named it | Open, **non-blocking**; recorded in Out of Scope and the future-work file |
+| **OQ3** | Upstreaming intent (standing, carried from M7/M9/M11–M17) | Open, standing. Does not block. |
+
+**OQ1 — Six lines have to change inside the frozen suite, and five of them are inside `@Test` bodies. Here is exactly why, and what the alternative costs.** (D5, D11.)
+
+The lock reads: *"add class-level `@HiltAndroidTest` + `@Config(application = HiltTestApplication::class)` + `@get:Rule HiltAndroidRule` to exactly the affected test classes — class-level only, zero `@Test` body or assertion changes."* Planning measured that **that combination does not exist**:
+
+- The four affected classes build their host with `Robolectric.buildActivity(SyncSettingsTestHost::class.java)`. Nine of the eleven test classes build the same host. Hilt requires an `@AndroidEntryPoint` **Activity** to host an `@AndroidEntryPoint` **Fragment**, with no exceptions and no `EntryPoint` workaround under Robolectric.
+- **Annotating the shared host in place** changes zero references — and drags **10 of 11 classes / 48 tests** onto `HiltTestApplication` + `HiltAndroidRule`, five times the approved footprint. It also breaks on `AuthenticationDialogJavaInteropTest.java`, because KSP does not process Java sources, so `@HiltAndroidTest` there would need a second javac `testAnnotationProcessor` in the same source set — a third unverified processor arrangement in a milestone that already has one at its critical path.
+- **Adding a separate Hilt host** keeps the footprint at exactly the approved 4 classes / 21 tests and leaves the Java oracle untouched — at the cost of substituting one identifier at six `buildActivity` sites, five of which happen to sit inside `@Test` bodies rather than in a `@Before` (`SynchronizationPreferencesFragmentLifecycleTest.kt:69,77,94,110`; `SyncSettingsHarnessSmokeTest.kt:53`).
+
+**Recommendation: the separate host.** Those six lines change **one identifier each** — no assertion, no arrange step, no act step, no fixture, no expectation. AC3 makes the whole thing falsifiable in one command (`git diff … | grep -c '^[-+].*assert'` → 0) and caps the substitutions at six. The alternative honours the letter of the lock while quadrupling the number of tests running under machinery they do not use — which is the outcome the lock was written to prevent. **Non-blocking: the plan proceeds on this recommendation.** If José prefers the literal reading, the swap is `SyncSettingsTestHost` gains `@AndroidEntryPoint` in place, `SyncSettingsHiltTestHost.kt` is not created, the six substitutions disappear, ten classes gain the three class-level annotations, and `ui/preferences/build.gradle` additionally gains `testAnnotationProcessor libs.hilt.compiler` for the Java test class — a decision that should be made before Step 4, not after.
+
+**OQ2 — `SynchronizationCredentials` is not behind the seam, and the milestone description said it would be.** (D14.)
+
+The description reads "an injectable repository/seam abstraction over `:storage:preferences`' `SynchronizationSettings`/`SynchronizationCredentials` statics and the `SynchronizationQueue.instance` mutable global". `SynchronizationSettings` and the queue are wrapped. `SynchronizationCredentials` is not, because **every one of its slice call sites is in code this milestone does not open**: nine in `GpodderAuthenticationFragment`, four in `NextcloudAuthenticationFragment` (both out of scope per D5), and five in `SynchronizationPreferencesFragment` of which four are inside `updateScreen()` and the provider-chooser dialog — state hoisting that M17's D3 and the future-work file both assign to Milestone 20. Wrapping `clear()` for the single logout-row caller would produce a seam that one consumer uses and three bypass.
+
+**Recommendation: defer, and record it.** Step 9 writes it into the future-work file against Milestone 19/20. **Non-blocking.** If José reads the milestone description as a commitment, the addition is bounded and named in advance: one more interface method (`clearCredentials()`), one more delegation in the impl, one more substitution at `SynchronizationPreferencesFragment.kt:129`, and no change to any acceptance criterion except AC5's `@Inject` count staying at 3 and the seam's method count going 6 → 7.
+
+**OQ3 — Upstreaming intent.** Standing, carried unchanged from M7/M9/M11–M17 (`tasks/antennapod-model-kotlin-future-work.md` item 2). Noted here because this milestone is the least upstream-palatable of the sequence so far: it introduces Hilt and KSP to a module in a project that has deliberately kept its DI surface at one annotation, and an upstream maintainer would reasonably ask whether AntennaPod wants a DI framework in `:ui:preferences` at all. That is a question about the *project's* direction rather than the code's quality, and it should be asked before the PR is offered upstream rather than after.
+
+## Open Questions
+_Running list — resolved items move into the Plan's Resolved Decisions._
+
+- **OQ1:** the "zero `@Test` body changes" lock vs. six host-identifier substitutions. Non-blocking; plan proceeds on the separate-host recommendation. Decide before Step 4.
+- **OQ2:** `SynchronizationCredentials` deferred rather than wrapped. Non-blocking; recorded in Out of Scope and Step 9's future-work update.
+- **OQ3:** standing upstreaming question, carried from Milestones 7–17 — sharper here, because this milestone introduces Hilt + KSP to a module.
+
+## Red-Team Verdict — Plan
+_By: legacy-android-red-team | 2026-09-16 | Loop 1 of max 2_
+
+### Verdict
+CHALLENGE
+
+### Concerns
+
+- **Severity:** MAJOR
+  **Class:** Coverage gaps left unaddressed / equivalence-proof gap (di track)
+  **Concern:** `PreferenceActivity.java` gets `@AndroidEntryPoint` in Step 6 (File Scope: "exactly two added lines"), which inserts a generated `Hilt_PreferenceActivity` superclass into the real, production host of **ten** preference fragments — not just `SynchronizationPreferencesFragment`. Research explicitly measured that `:app`'s own test source set has "no fragment-attach tests for the preferences screens" and that annotating `PreferenceActivity` "should be verified, not assumed" (Research finding 6, Unknown 5(e)). The Plan never closes that gap: AC18 re-runs `:app:testPlayDebugUnitTest` and checks per-class counts are unchanged for "all four `:app` test classes" — but Research already established those four classes are unrelated to preferences ("4 classes, none preference-related," D13's baseline table). AC18 is therefore structurally incapable of detecting a regression in the nine other fragments `PreferenceActivity` hosts (`MainPreferencesFragment`, the search-result routing at `PreferenceActivity.java:149-160`, etc.) — it can only prove the four unrelated `:app` test classes still pass, which they would regardless of whether `PreferenceActivity`'s Hilt transform broke something else. D9's `SyncSettingsHiltGraphTest` doesn't cover this either: it attaches `SynchronizationPreferencesFragment` to the synthetic `SyncSettingsHiltTestHost` (an `AppCompatActivity`), never to the real `PreferenceActivity` (a Java `ToolbarActivity`) — so the one end-to-end path that actually ships to users (`Hilt_PreferenceActivity` → `ToolbarActivity` hosting `Hilt_SynchronizationPreferencesFragment` → `Hilt_AnimatedPreferenceFragment` → `AnimatedPreferenceFragment`) is exercised by **no test in the suite** and by no manual/instrumented run either. This is also the one unverified interaction in this milestone that got no explicit gate: D3 gated the mixed-processor build, D10 gated lint-over-generated-code, D11 gated the `HiltTestApplication` scoping choice — all with concrete stop-conditions — but the `PreferenceActivity` ripple, despite being named by Research in the same breath as those, has no corresponding Step or AC that could fail because of it. Separately, `AGENTS.md` (a hard, "STRICTLY FOLLOW" project rule) requires running the app when the changed code isn't covered by existing tests ("Usually you will need to run the application, but if there are existing tests that cover the code you wrote, you can run those instead") — no Step in this Plan runs the app (`installPlayDebug` + `adb shell monkey`, or a manual click-through of a couple of the other nine preference screens) despite this being precisely the situation that rule is written for.
+  **Evidence:** Research finding 5(e) / Unknown 5, "`PreferenceActivity.java:63-88` (ten-fragment ladder)"; Plan D13's baseline table ("`:app` unit tests ... 4 classes, none preference-related"); Steps section, Step 6 ("Run `./gradlew :app:testPlayDebugUnitTest --rerun` and compare per-class counts against Step 1's record (AC17)"); AC18 ("This is the measurement Research could only infer from dependency declarations" — restated as fact, not closed); D9's test host is `SyncSettingsHiltTestHost`, not `PreferenceActivity`.
+  **Suggested mitigation:** Either (a) add a Step that runs the app on-device/emulator per `AGENTS.md`'s own testing convention and manually exercises at least the search-result route (`onSearchResultClicked`) and one other `PreferenceActivity`-hosted screen, recording the result in Implementation Notes; or (b) add a lightweight instrumented (`androidTest`) smoke test that opens `PreferenceActivity` for real and navigates into `SynchronizationPreferencesFragment` and at least one sibling fragment, proving the real host/fragment pairing survives the Hilt transform; or (c) if the risk is judged acceptable without either, say so explicitly as an argued, named residual risk (the way D4 names what it gives up) rather than let AC18's wording stand as if it had closed the question Research raised. Any of the three is enough to clear this concern on the next loop.
+
+- **Severity:** MINOR
+  **Class:** Equivalence-proof gap / AC falsifiability
+  **Concern:** AC5's test-source-set line — `git grep -c "@AndroidEntryPoint" -- 'ui/preferences/src/test/**'` → **2** — is not literally what that command produces. `git grep -c` prints one `path:count` line per matching file (here, `SyncSettingsHiltTestHost.kt:1` and `SyncSettingsCaptureHost.kt:1`), not a single scalar "2". A reviewer running the command verbatim, as the AC instructs, gets two lines and has to do the summation themselves — which is exactly the kind of ambiguity the rest of this Plan's ACs (which are otherwise unusually precise) avoid.
+  **Evidence:** `tasks/antennapod-sync-settings-di-milestone-18.md` AC5: "In the test source set: `git grep -c \"@AndroidEntryPoint\" -- 'ui/preferences/src/test/**'` → **2**".
+  **Suggested mitigation:** Either pipe through a summation (e.g. `| awk -F: '{s+=$2} END{print s}'`) or restate the criterion as "exactly two files match, one occurrence each" using `-l` the way the very next clause in the same AC already does for `@HiltAndroidTest`.
+
+- **Severity:** MINOR
+  **Class:** Equivalence-proof gap (di track / Robolectric test-environment interaction)
+  **Concern:** `SyncSettingsHarnessSmokeTest` attaches all three fragments but gets the class-level `@HiltAndroidTest` / `@Config(application = HiltTestApplication::class)` / `HiltAndroidRule` treatment in Step 4 because one of its tests attaches `SynchronizationPreferencesFragment`. That means the class's *other* tests — which attach `GpodderAuthenticationFragment`/`NextcloudAuthenticationFragment` via the plain, non-Hilt `SyncSettingsTestHost` — now run under `HiltTestApplication` instead of a bare `android.app.Application`, purely as a side effect of sharing a test class. The Plan doesn't argue why `HiltTestApplication` is behaviorally inert for sub-tests that never touch Hilt (it plausibly is, per Hilt's design), the way D11 carefully argues the per-class-`@Config` mechanism for the four affected classes. This will be caught empirically by AC1 if it's wrong (same per-class counts required), so it's not a proof gap that could ship silently — but it's a reasoning gap in a Plan that otherwise explains every other cross-cutting Robolectric interaction explicitly.
+  **Evidence:** Step 4 ("To each of the **five** affected test classes add, class-level only..."); Research finding 5 table (`SyncSettingsHarnessSmokeTest.kt` attaches "all three fragments").
+  **Suggested mitigation:** One sentence in Step 4's Implementation Notes confirming `HiltTestApplication` was checked to behave identically to `Application` for a test that never calls `hiltRule.inject()` or touches an `@AndroidEntryPoint` type — closing the reasoning gap even though AC1 already closes the risk.
+
+### Notes on items considered and not re-raised
+- **D4, D5, D9 design review:** All three hold up. D4's per-call global read is the only shape consistent with `RecordingSynchronizationQueue`'s installation mechanism, and its honesty about "façade, not replacement" is exactly the disclosure this checklist looks for. D5's blast-radius arithmetic (21/37/43) is internally consistent with the test-class table in Research finding 5. D9's two tests are a real regression test for the exact silent-fallback risk D6 names — if `@HiltViewModel`/`@Inject` were removed, the fake bound via `@BindValue` would not be the one observed, and the test would fail.
+- **OQ1 (six identifier substitutions inside frozen `@Test` bodies) and OQ2 (`SynchronizationCredentials` deferred despite being named in the milestone description):** Both are already disclosed prominently, quantified exactly, and routed to José as non-blocking open questions rather than settled quietly. That is the correct handling for a plan-level scope/lock deviation and is not re-raised as a red-team finding.
+- **Concurrency, compose, navigation, gradle-kts:** Correctly asserted not applicable (AC "Not applicable to this milestone" block) and not second-guessed here.
+- **Public API breakage:** AC12's coverage of `AuthenticationDialogJavaInteropTest.java`, the fragment's no-arg constructor/`public` visibility, and `PreferenceActivity.java`'s two-line diff is adequate for the *file-level* diff; the MAJOR concern above is about the *runtime* blast radius of that diff on sibling fragments, not about the diff itself being out of scope.
+- **HSHD:** Correctly scoped out — no credential value appears in any new fixture, and `testLogoutRowClears…` asserts only nullness.
+
+Loop 1 of 2. The MAJOR concern is actionable without a full re-plan: it needs either a verification step added to Steps/AC, or an explicit, argued risk-acceptance recorded the way this Plan already does elsewhere for its other named residual risks.
+
+---
+
+## Response to Red-Team (Loop 1)
+_By: legacy-android-planner | 2026-09-16 | patch to the Plan above, not a re-plan_
+
+All three concerns are addressed in the Plan section above. Nothing was removed or weakened: no AC was deleted, no AC's pass condition was loosened, D1–D14 are unchanged except for one added row in D13's baseline table, and OQ1–OQ3 are untouched. Criteria count **23 → 24**; steps **9 → 10** (the new one is `6a`, numbered so every existing cross-reference to Steps 7/8/9 stays valid); the `:ui:preferences` unit-suite ledger is unchanged at **55 → 64**.
+
+**MAJOR — the `PreferenceActivity` ripple. Closed with mitigations (a) + (c), plus a finding that made (b) unnecessary.**
+
+While patching, planning found that **`app/src/androidTest/java/de/test/antennapod/ui/PreferencesTest.java` already exists**: 22 `@Test`, `@LargeTest`, an `ActivityTestRule<PreferenceActivity>` that launches the **real** Activity in `@Before` and drives `MainPreferencesFragment` → **User Interface**, **Playback**, **Downloads** and **Auto-download** — four of the nine other fragments, through the real ladder and the real back stack. Suggestion (b) — writing a new instrumented test for the real host — is therefore not the cheapest path to that evidence; *running the one that exists*, before and after, is, and it costs **zero** File Scope. The plan now does that and adds the `AGENTS.md` app run on top, because `PreferencesTest` covers neither the Sync Settings screen itself nor `onSearchResultClicked`'s `highlight` branch.
+
+| Where | What changed |
+|---|---|
+| **D15** (new, after D14) | The decision in full: what AC18 could and could not prove; the two-half gate; and — in D4's "what it gives up" form — the accepted residual risk (five of nine siblings never opened; neither half runs in CI, because `assemblePlayDebugAndroidTest` assembles instrumented tests and never runs them; no automated unit test of `PreferenceActivity` added, and why writing one was rejected). Also records the trap that **Notification Preferences is not a valid fragment-attach probe** — `openScreen` routes it to the system Intent above API 26 (`PreferenceActivity.java:119-124`), so the red-team's own suggested screen would have produced a false pass. |
+| **Resolved Decisions index** | Unknown 5(e) now maps to **D11** (the `HiltTestApplication` half) **and D15** (the ripple half). D15 also closes Research characterization gap **4**, which D12's table had silently omitted — stated as an omission, not backfilled quietly. |
+| **D13** baseline table | One row added: `PreferencesTest`'s 22 per-test results are baselined at Step 1, on a real device, so a pre-existing red is recorded where it is unambiguous rather than argued about at Step 6a. The `:app` unit-test row now says outright why it cannot close this question. |
+| **Step 1** | Runs that instrumented baseline; states that the 22 instrumented tests are never counted into this plan's unit-suite totals. |
+| **Step 6** | Closes with: "these two lines change the production host of ten fragments, nine of which nothing here covers — so this commit is not reported as verified until Step 6a's gate has run." The `:app` unit-test re-run is re-pointed from AC17 to AC18 (it was a typo) with the D15 caveat attached. |
+| **Step 6a** (new, no repo diff) | (i) `PreferencesTest` re-run on the same device, compared row for row to Step 1. (ii) `./gradlew --console=plain :app:installPlayDebug && adb shell monkey -p de.danoeh.antennapod.debug 1` — `AGENTS.md`'s exact command — then a six-line checklist: Settings/`MainPreferencesFragment`; the **Sync Settings** screen incl. the provider-chooser dialog (the `Hilt_PreferenceActivity` → `Hilt_SynchronizationPreferencesFragment` → `AnimatedPreferenceFragment` chain no test touches); **User Interface** and **Playback** as non-Hilt siblings; the up-arrow back-stack pop from both a sibling and the Sync screen; both `onSearchResultClicked` routes **with the preference highlighted** (`result.highlight(fragment)` at `:160-161` is where a wrong instance fails silently); and the Notification Preferences Intent. Stop-condition in D3's form: any regression is a full stop with `adb logcat -d \| grep "de.danoeh.antennapod" \| tail -20` pasted and escalation to José before Step 7. |
+| **Steps preamble + ledger** | "Nine steps" → "ten steps, seven commits"; Steps 1, **6a** and 8 are the no-diff ones; a `6a` row added to the test-count ledger noting the 22 instrumented tests are a separate source set and task. |
+| **Step 8** | Restates the Step-6a result in one line (not re-run — no production code changes after Step 6) and restates that CI assembles but never runs `PreferencesTest`. |
+| **Step 9** | A new `ui/preferences/README.md` convention — every `PreferenceFragmentCompat` in this module is hosted in production by `:app`'s shared `PreferenceActivity`, which hosts ten, so annotating one fragment changes the host for all ten — and the future-work file records D15's residual risk by name. |
+| **File Scope** | Explicit: **no file is created or modified for this gate**; `app/src/androidTest/**` stays byte-identical, and a new `androidTest` file in the diff fails scope review. |
+| **AC18** (amended, not weakened) | Its pass condition is unchanged (same per-class counts at Steps 1 and 6). Added: an explicit statement that D13's baseline records those four classes as none-preference-related, so this AC is structurally incapable of failing because of the annotation and must not be reported as closing Unknown 5(e); the overclaiming sentence is withdrawn in place, pointing at AC24 and D15. |
+| **AC24** (new) | The gate made checkable in three parts: (i) `PreferencesTest` row-for-row before/after with the pre-existing-red carve-out spelled out; (ii) all six checklist lines recorded **pass** — "not checked" fails, and recording Notification Preferences as a *fragment-attach* pass fails; (iii) D15's residual-risk paragraph carried verbatim into Implementation Notes, plus `git diff --name-only origin/develop -- app/src/androidTest/` empty. |
+| **Milestone + Out of Scope** | Claim 4 ("What it does not claim") now names the ten-fragment ripple and what the gate does not reach. Out of Scope gains a line: no new automated coverage for the nine siblings; the gate runs existing instruments only. |
+
+**MINOR 1 — AC5's non-scalar counts. Fixed, and one more instance than was reported.** AC5 now opens with the rule that every count is either a `-c` on a glob matching exactly one **named** file or a `-l` file count. The reported clause (`git grep -c "@AndroidEntryPoint" -- 'ui/preferences/src/test/**'` → 2, which prints two `path:1` lines) is restated as `-l` listing exactly 2 named files, one occurrence each. Patching also caught a second instance the review did not name: **`@Inject` → 3 spans three files** and had the same defect; it is restated as `-l` listing exactly 3 named files, with an `awk` summation given for a reviewer who wants the single number. The four single-file `-c` commands now name the file each one matches, so the `path:N` output form is explicit. No count's value changed.
+
+**MINOR 2 — `SyncSettingsHarnessSmokeTest` wrapped whole. Justified in Step 4, in the plan's own idiom.** Step 4 now states why: Robolectric picks the `Application` **per class**, not per test, and only one of that class's six tests attaches `SynchronizationPreferencesFragment`, so class-level `@Config` is the only available granularity and splitting the class would be the suite rewrite D7 forbids. It is safe because `HiltTestApplication` is an ordinary `Application` that materialises no component until asked — a sub-test that never calls `hiltRule.inject()` and attaches no `@AndroidEntryPoint` type never reaches `TestApplicationComponentManager.generatedComponent()` (D11 reason 1, read in the other direction) — and it is **checked**: AC1 already requires that class's count to stay 6 with unchanged assertions from Step 4 on, and Implementation Notes now records the observation for the five non-Hilt sub-tests explicitly.
+
+**Not changed, deliberately:** Research; D1–D12 and D14; OQ1–OQ3 (all three remain open and non-blocking); every pre-existing AC's pass condition; the `!!` and test-count targets; File Scope's file list.
+
+---
+
+## Red-Team Verdict — Plan
+_By: legacy-android-red-team | 2026-09-16 | Loop 2 of max 2_
+
+### Verdict
+APPROVE
+
+### Concerns
+
+- **Severity:** MINOR
+  **Class:** Coverage gaps left unaddressed (di track) — accepted, not closed
+  **Concern:** D15/AC24's gate is real and falsifiable, but it is still a point-in-time sample, not a standing regression net: five of the nine `PreferenceActivity`-hosted sibling fragments (Import/Export, Swipe, Automatic Deletion, Parental Control, `NotificationPreferencesFragment` itself) are never opened by either half of the gate, and neither half runs in CI (`assemblePlayDebugAndroidTest` assembles `PreferencesTest` but never executes it; the manual checklist is manual by construction). A future change that breaks only one of those five untested siblings would ship undetected. This is not a new finding — the Plan already states it in exactly these terms in D15's "residual risk" paragraph and Step 6a's closing line — so it is recorded here for traceability rather than as something the planner missed.
+  **Evidence:** `tasks/antennapod-sync-settings-di-milestone-18.md` D15 ("Five of the nine sibling fragments are never opened by either half..."); AC24(iii).
+  **Suggested mitigation:** None required to proceed — this is the correct place to stop spending on this milestone's `di` deliverable. If a future milestone touches `PreferenceActivity` again, re-open this line rather than assume D15's sample still holds.
+
+### Verification performed this loop
+
+1. **MAJOR (Loop 1) — `PreferenceActivity` host ripple.** Read `PreferenceActivity.java` directly. Confirmed line-for-line: the ten-fragment `if`/`else-if` ladder at `getPreferenceScreen` (`:63-88`), `MainPreferencesFragment` attached directly in `onCreate` (`:49-53`), `onSearchResultClicked` (`:148-163`) with `result.highlight(fragment)` at `:160-161`, and — the load-bearing factual claim — `openScreen`'s `if (screen == R.xml.preferences_notifications && Build.VERSION.SDK_INT >= 26)` short-circuit to a system `Intent` at `:119-124`, which never attaches `NotificationPreferencesFragment`. The report's "Notification Preferences is a trap" claim is **correct**, not asserted on faith, and the reasoning that the red-team's own naive suggestion (checking Notification Preferences as a fragment-attach probe) would have produced a false pass is sound. Separately read `app/src/androidTest/java/de/test/antennapod/ui/PreferencesTest.java` in full: confirmed exactly **22 `@Test`** methods, a real `ActivityTestRule<PreferenceActivity>` launching the genuine Activity, and that it drives **User Interface**, **Playback**, **Downloads** and **Auto-download** (via `clickPreference(R.string.user_interface_label / playback_pref / downloads_pref / pref_automatic_download_title)`) — matching D15/AC24's description exactly, with no exaggeration of what the pre-existing suite covers. Also independently confirmed (via `find`) that `:app`'s unit-test source set is exactly the 4 classes D13 names (`CancelDownloadActionButtonTest`, `PlainTextLinksConverterTest`, `ShownotesCleanerTest`, `FeedDiscovererTest`) — none preference-related — which is the fact D15's argument that "AC18 cannot detect this ripple" depends on, and it holds. D15 states the residual risk honestly and does not understate it: it names the five untested siblings by name, states plainly that neither half of the gate runs in CI, and states that no automated coverage of `PreferenceActivity` is added, with a reasoned cost argument for why (a fifth unproven annotation-processor arrangement in a milestone whose critical path already carries one, per D3). AC24 is falsifiable in all three parts: (i) a row-for-row instrumented-test comparison with an explicit pre-existing-red carve-out and a clear stop-condition, (ii) a fixed six-line checklist where "not checked" and a mis-recorded Notification Preferences pass both explicitly fail the criterion, (iii) a required verbatim risk paragraph plus an empty-diff check. File Scope confirms no production or `androidTest` file is added for this gate, and the Steps/File-Scope text is internally consistent with that (Step 6a explicitly "no repo diff"). This concern is resolved to the extent a `di` milestone reasonably can resolve it without opening a `:app` scope expansion the Plan correctly declines.
+2. **MINOR 1 — AC5 scalar counts.** Read AC5 in full. Every clause now yields a single unambiguous number: four `-c` clauses each match exactly one named file (verified against the interface/module/fragment/ViewModel file names named in the same clause), and the two multi-file clauses (`@Inject`, and the test-source `@AndroidEntryPoint`/`@HiltAndroidTest` checks) now use `-l` with an explicitly stated file count, plus an `awk` summation offered for `@Inject`. No remaining `-c`-across-a-multi-file-glob ambiguity. Fixed as reported, and the extra `@Inject` instance the report says it caught beyond the original finding is real (the original Loop-1 concern named only the `@AndroidEntryPoint` test-source clause).
+3. **MINOR 2 — Step 4 justification.** Confirmed a full paragraph exists in Step 4 explaining why `SyncSettingsHarnessSmokeTest` is wrapped whole (Robolectric selects `Application` per class, not per test, and splitting the class would be the suite rewrite D7 forbids) and why it is safe for the five non-Hilt sub-tests (`HiltTestApplication` materializes no component until asked, and AC1 already checks the class's count/assertions stay unchanged). This is a substantive justification, not a placeholder line.
+4. **Overall sanity pass.** Compared the "Not changed, deliberately" claim against the actual content: D13 gained exactly one row (the `PreferencesTest` baseline); D1–D12 and D14 are textually unchanged from what Loop 1's verdict already reviewed and did not challenge; File Scope's file lists are unchanged except for the explicit "no file is created or modified for the D15 host gate" sentence, which is a clarification, not a scope change; AC18's pass condition (same per-class counts at Step 1 and Step 6) is verbatim-identical to before, with only additional honesty caveats appended; OQ1–OQ3 are untouched; the `!!` targets (40→38) and test-count ledger (55→64) are unchanged. No silent loosening found anywhere in the diff between the pre-Loop-1 Plan and the current one.
+
+### Failure-mode categories considered and dismissed this loop
+- **Silent behavior changes from mechanical translation:** not applicable at plan stage; D4/D6/D8 already argue equivalence properties explicitly and were not re-litigated (out of this loop's scope).
+- **Public API breakage:** AC12 unchanged and still adequate; not re-opened.
+- **`di` track scope/lifecycle mismatch:** D4's unscoped-binding argument (gap 1) still holds structurally; not re-litigated per the instruction to not re-open D1–D14.
+- **Milestone/scope creep:** File Scope's "byte-identical" and "also not in scope" lists are unchanged; D15's gate adds zero files, confirmed above.
+
+This is the second and final loop. The patch closes the MAJOR finding with a real, falsifiable, honestly-scoped gate rather than an argued waiver, and both MINOR findings are fixed as described. The plan proceeds to implementation.
+
+## Implementation Notes
+_By: android-migration-developer | 2026-09-16 (in progress — STOPPED at Step 2's D3 gate, see below)_
+
+### Branch
+
+Cut fresh per Step 1/D13: `di/ui-preferences-sync-settings-milestone-18`, from a re-fetched `origin/develop` at `b8eda5b674f00b0fa7df1ffc2a5283510a4a6e4a`. All five ancestor commits (`f5d4c5551`, `45904a410`, `8e4c29217`, `cfe560cb0`, `b8eda5b67`) reconfirmed as ancestors via `git merge-base --is-ancestor`. `git diff HEAD origin/develop` was empty before branching.
+
+### Step 1 — Baseline, re-measured. No repo diff. All numbers match the plan exactly, with one disclosed divergence.
+
+- **Sync-settings suite**: `./gradlew :ui:preferences:testFreeDebugUnitTest --rerun` and `:testPlayDebugUnitTest --rerun`, both BUILD SUCCESSFUL. Per-class counts identical on both flavours and matching the plan exactly: Gpodder Char 9, SyncPrefs Char 8, ViewModel 7, Gpodder Async 6, Nextcloud 6, Smoke 6, AuthDialog 4, Lifecycle 4, Screenshot 3, JavaInterop 1, Gpodder Cancellation 1 = **55**.
+- **`!!` per file** (`grep -o '!!' <f> | wc -l`): `SynchronizationPreferencesFragment.kt` **22**, `GpodderAuthenticationFragment.kt` **11**, `NextcloudAuthenticationFragment.kt` **7**, `SynchronizationPreferencesViewModel.kt` **0**, `AuthenticationDialog.kt` **0** — **40** total. Matches.
+- **`SynchronizationQueue.instance` production reads**: 7, at exactly the line numbers the plan names (`SynchronizationPreferencesFragment.kt:121,125,130`; `GpodderAuthenticationFragment.kt:83,238`; `NextcloudAuthenticationFragment.kt:95,99`). Matches.
+- **`:app:testPlayDebugUnitTest --rerun`**: BUILD SUCCESSFUL, 4 classes — `CancelDownloadActionButtonTest` (2), `PlainTextLinksConverterTest` (4), `FeedDiscovererTest` (7), `ShownotesCleanerTest` (16) — none preference-related. Matches D13's baseline table exactly, confirming AC18's structural limitation holds from the start.
+- **`:app` instrumented `PreferencesTest` baseline (D15/AC24)**: ran on a real emulator (Pixel_9a AVD, API 36, arm64-v8a, booted via `/Users/josegarcia/Library/Android/sdk/emulator/emulator -avd Pixel_9a -no-window -no-snapshot -no-boot-anim -gpu swangle_indirect`) via `./gradlew :app:connectedPlayDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=de.test.antennapod.ui.PreferencesTest`. Result: **22 `@Test`, 19 PASS, 3 SKIPPED, 0 FAILED** (skipped: `testBluetoothReconnect`, `testHeadPhonesReconnect`, `testEnablePersistentPlaybackControls` — hardware-dependent, skip on emulator, not related to this milestone). Saved verbatim to `/tmp/m18-baseline/step1-PreferencesTest-results.xml` for the Step 6a row-for-row comparison.
+- **Resolved dependency configurations** captured to `/tmp/m18-baseline/step1-ui-preferences-playDebugCompileClasspath.txt` and `step1-ui-preferences-playDebugUnitTestRuntimeClasspath.txt`.
+
+**Divergence found and recorded, not silently adjusted (per D13):** Research/the Plan state the `playDebugUnitTestRuntimeClasspath` baseline contains "zero `com.google.dagger:*` and zero `javax.inject`." Re-measurement confirms **zero `com.google.dagger:*`** but **three** pre-existing `javax.inject:javax.inject:1` entries, pulled in transitively by Robolectric's own dependency tree (`org.robolectric:*` → `javax.inject:javax.inject:1`, unrelated to Hilt). This does not affect any Resolved Decision — D4/D8/AC23 all key off `com.google.dagger:*`, which is genuinely zero at baseline — but AC23's literal wording ("zero `com.google.dagger:*` and zero `javax.inject`") is one clause overclaimed for `javax.inject`, pre-existing and unrelated to this milestone's changes. Flagged here for José; does not block.
+
+### Step 2 — Hilt + KSP wired into `:ui:preferences`; seam + `@Module` added, unconsumed. **STOPPED at the D3 mixed-processor gate.**
+
+**Files touched, exactly per File Scope:**
+- `ui/preferences/build.gradle` — added `alias(libs.plugins.hilt)`, `alias(libs.plugins.ksp)` to `plugins {}`; added a `hilt { enableTransformForLocalTests = true }` block; added `implementation libs.hilt.android` and `ksp libs.hilt.compiler` to `dependencies {}`. No catalog line added (both already catalogued, per plan).
+- Created `ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SyncSettingsRepository.kt` — the six-method `SyncSettingsRepository` interface (D14) and `DefaultSyncSettingsRepository @Inject constructor()` (D4: `private val queue: SynchronizationQueue get() = SynchronizationQueue.instance!!`, no field, no scope annotation).
+- Created `ui/preferences/src/main/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/SyncSettingsModule.kt` — `@Module @InstallIn(SingletonComponent::class) abstract class SyncSettingsModule { @Binds abstract fun bindSyncSettingsRepository(...): SyncSettingsRepository }`.
+- Created `ui/preferences/src/test/java/de/danoeh/antennapod/ui/preferences/screen/synchronization/DefaultSyncSettingsRepositoryTest.kt` — 3 tests per plan: `testReadsDelegateToSynchronizationSettingsOnEveryCall`, `testQueueCommandsDelegateToWhicheverQueueIsInstalledAtCallTime`, `testQueueCommandThrowsNullPointerExceptionWhenNoQueueIsInstalled`. All 3 green; suite **55 → 58**, confirmed by test-result XML. Zero pre-existing test files touched at this step.
+- `SynchronizationPreferencesFragment.kt` and `SynchronizationPreferencesViewModel.kt` are untouched — confirmed empty diff against `origin/develop` for both.
+
+**The D3 gate — three builds green, the fourth (literal grep) does not return a hit. Stopping per D3's explicit instruction rather than improvising past it.**
+
+1. `./gradlew :app:assembleDebug` — **BUILD SUCCESSFUL** (16s, 1298 actionable tasks).
+2. `./gradlew assemblePlayDebug` — **BUILD SUCCESSFUL** (6s, 1058 actionable tasks).
+3. `./gradlew assemblePlayDebugAndroidTest` — **BUILD SUCCESSFUL** (43s, 1450 actionable tasks).
+4. `grep -rl "SyncSettingsRepository" app/build/generated/` — **returns nothing** (exit code 1, empty output).
+
+**What was investigated before stopping, rather than accepting the empty grep at face value:** `ui/preferences/build/generated/ksp/playDebug/java/hilt_aggregated_deps/_de_danoeh_antennapod_ui_preferences_screen_synchronization_SyncSettingsModule.java` confirms KSP *did* generate the `@AggregatedDeps` marker for `SyncSettingsModule` naming `SingletonComponent`. And `app/build/generated/hilt/component_sources/{free,play}Debug/de/danoeh/antennapod/PodcastApp_HiltComponents.java` (line 132) and `app/build/generated/hilt/component_trees/{free,play}Debug/de/danoeh/antennapod/PodcastApp_ComponentTreeDeps.java` (line 82) both literally reference `SyncSettingsModule.class` — i.e., **the KSP-processed Kotlin module's Hilt module did reach `:app`'s javac-processed `SingletonComponent` aggregation**, which is the mechanism D3 exists to prove. What is *not* present anywhere under `app/build/generated/` is the literal string `SyncSettingsRepository` — because `DaggerPodcastApp_HiltComponents_SingletonC.java` (504 lines, grepped directly) contains no reference to it. The most likely explanation: Dagger's generated component only emits a named provider/field for a binding that is actually requested somewhere in the graph (an `@Inject` site, an entry point, or a component provision method); since Step 2 deliberately leaves the binding **unconsumed** (no `@Inject` site exists yet — that's Steps 5–7), the `SyncSettingsRepository` interface type is never named in the generated output, even though the module supplying it is aggregated correctly. This appears to be a case the Plan's authors could not have verified without running the build (D3 says exactly this: "nothing in this repo has ever exercised it").
+
+**Why this is reported as a stop rather than resolved unilaterally:** AC6/D3 specify an exact command and an exact string, framed as the falsifiable proof of cross-processor aggregation, with an explicit instruction that "the developer STOPS and escalates to José — no improvisation" if any of the four fails, and a separate instruction that a green build alone must not be reported as sufficient. Substituting a different grep target (e.g., `SyncSettingsModule`) on my own authority, even though I'm confident it demonstrates the same underlying mechanism, would be exactly the kind of quiet AC-reinterpretation the plan's own review process (two red-team loops) was built to prevent. This is a plan-authoring gap (the literal string chosen doesn't survive contact with Dagger's dead-binding pruning for an intentionally-unconsumed Step 2), not a build failure and not evidence that mixed-processor aggregation itself is broken — but the decision about whether to (a) accept the `SyncSettingsModule` evidence as satisfying AC6/D3's intent, (b) amend AC6's grep target, or (c) pull binding consumption earlier so the literal string appears, belongs to José per the plan's own stop-condition rule.
+
+**Other Step 2 gate items, run for completeness while the above was being investigated:**
+- `./gradlew checkstyle lint` — **BUILD SUCCESSFUL**. No D10 rung needed; lint is green on the first Hilt-generating module with no changes required.
+- `./gradlew ktlintCheck` — **BUILD SUCCESSFUL**.
+
+### D3 stop-condition resolved by José 2026-09-16 — grep target amended, gate now green
+
+José reviewed the investigation above and amended D3's step text and AC6 in place: the grep target is corrected from `SyncSettingsRepository` to `SyncSettingsModule`, with a dated amendment note recorded at both sites explaining why (Dagger only names a binding's interface in generated code once something consumes it, which Step 2 deliberately does not yet; `SyncSettingsModule` is the string that actually proves cross-module aggregation). The gate's intent and stop-condition are otherwise unchanged.
+
+Re-ran the corrected command:
+
+```
+grep -rl "SyncSettingsModule" app/build/generated/
+```
+
+Result — **4 hits**, all under `:app`'s generated Hilt sources:
+```
+app/build/generated/hilt/component_sources/freeDebug/de/danoeh/antennapod/PodcastApp_HiltComponents.java
+app/build/generated/hilt/component_sources/playDebug/de/danoeh/antennapod/PodcastApp_HiltComponents.java
+app/build/generated/hilt/component_trees/freeDebug/de/danoeh/antennapod/PodcastApp_ComponentTreeDeps.java
+app/build/generated/hilt/component_trees/playDebug/de/danoeh/antennapod/PodcastApp_ComponentTreeDeps.java
+```
+
+**All four D3/AC6 gate commands are now satisfied:**
+1. `./gradlew :app:assembleDebug` — BUILD SUCCESSFUL.
+2. `./gradlew assemblePlayDebug` — BUILD SUCCESSFUL.
+3. `./gradlew assemblePlayDebugAndroidTest` — BUILD SUCCESSFUL.
+4. `grep -rl "SyncSettingsModule" app/build/generated/` — 4 hits (above), superseding the original `SyncSettingsRepository` target's empty result recorded earlier in this section.
+
+Step 2 is complete. Proceeding to commit it and continue with Step 3.
+
+### Step 2 — committed
+
+Commit message:
+```
+feat(ui:preferences): wire Hilt + KSP into the module, add the SyncSettingsRepository seam unconsumed (Milestone 18 Step 2)
+
+Stands up this repository's first Hilt/KSP graph on :ui:preferences: the
+hilt and ksp plugins, a hilt { enableTransformForLocalTests = true } block,
+and the hilt-android/hilt-compiler dependencies. Adds SyncSettingsRepository
+(the six-method seam over SynchronizationSettings and SynchronizationQueue.
+instance, D14) and its default implementation, which reads the
+SynchronizationQueue global per call rather than caching it (D4) so the
+existing RecordingSynchronizationQueue test double stays observable. Adds
+SyncSettingsModule's @Binds/@InstallIn(SingletonComponent) binding. Neither
+file is consumed yet -- that lands in Steps 5-7.
+
+Verifies the mixed-processor build gate (D3): KSP-processed Kotlin library
+module aggregates correctly into :app's javac-processed SingletonComponent,
+confirmed via :app's generated PodcastApp_HiltComponents.java/
+PodcastApp_ComponentTreeDeps.java naming SyncSettingsModule.
+
+Track: di. Milestone 18, Step 2 of 10.
+```
+
+Confirmed `git diff --stat origin/develop` still shows only the four expected paths (`ui/preferences/build.gradle`, `SyncSettingsRepository.kt`, `SyncSettingsModule.kt`, `DefaultSyncSettingsRepositoryTest.kt`) before committing.
+
+### Not yet started (at time of writing)
+Steps 3 through 9, proceeding now in order.
+
