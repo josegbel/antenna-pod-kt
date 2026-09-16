@@ -102,3 +102,27 @@ Conventions a future edit to this slice must preserve:
     `CoroutineDispatcher` that only runs queued blocks on an explicit call. No `runTest`, `TestDispatcher` or
     `Dispatchers.setMain`. `kotlinx-coroutines-test` is expected to become necessary only when a `ViewModel`
     read here becomes `suspend` behind an injected repository.
+17. **`SyncSettingsRepository`'s default implementation reads `SynchronizationQueue.instance` per call and
+    never caches it in a field.** This module's tests install their `SynchronizationQueue` test double by
+    direct assignment to that global (`SynchronizationQueue.instance = RecordingSynchronizationQueue()`), so
+    any seam that reads the global once (at construction or at injection time) rather than on every call
+    stops observing the test double. A `@Provides`/`@Binds` shape that resolves the dependency once and
+    holds it is therefore wrong here even though it looks more idiomatic — the per-call accessor is load-bearing.
+18. **`HiltTestApplication` is applied per test class via `@Config(application = HiltTestApplication::class)`,
+    never via a module-level `robolectric.properties`.** This module's entire test source set is the
+    sync-settings slice — a properties file would swap the `Application` under every class, including the
+    majority that need nothing from Hilt, and would silently push them onto `HiltAndroidRule` too. Per-class
+    `@Config` keeps the footprint visible in each class's own diff.
+19. **`SynchronizationPreferencesViewModel`'s no-arg secondary constructor exists only so its frozen
+    characterization suite can construct it directly** (`SynchronizationPreferencesViewModel()`, without a
+    Hilt graph). It is a dated test affordance, not a design pattern to copy: production acquisition must
+    always go through `ViewModelProvider`/`HiltViewModelFactory`, and a class that can silently construct its
+    own concrete dependency is a weaker inversion than an `@Inject`-only constructor. Do not add a bare
+    no-arg constructor to a future `@HiltViewModel` in this module without the same justification and a test
+    that would fail if the DI graph silently fell back to it.
+20. **Every `PreferenceFragmentCompat` in this module is hosted in production by `:app`'s shared
+    `PreferenceActivity`, which hosts ten of them.** Annotating a single preference fragment
+    `@AndroidEntryPoint` requires making the host `@AndroidEntryPoint` too, which changes the generated
+    superclass for all ten — not just the one being converted. That ripple is verified by running the real
+    app and `:app`'s existing instrumented `PreferencesTest`, not by this module's own unit tests, which
+    cannot observe a different fragment's behaviour under the shared host.

@@ -1181,6 +1181,144 @@ Created `ui/preferences/src/test/java/de/danoeh/antennapod/ui/preferences/screen
 
 Step 7 complete. Committing (also folds Step 6a's no-diff Implementation Notes, already written above), then continuing to Step 8.
 
-### Not yet started (at time of writing)
-Steps 8 and 9.
+### Step 8 — CI-bar verification sweep. No repo diff.
+
+Ran every acceptance criterion's command.
+
+**Builds, all BUILD SUCCESSFUL:**
+- `./gradlew :app:assembleDebug` — green (8s).
+- `./gradlew assemblePlayDebug assemblePlayRelease assembleFreeRelease assemblePlayDebugAndroidTest` — green (4m37s). The only warnings are pre-existing/unrelated: R8 kotlin-metadata-version warnings on `app-wearos`'s release minification (a tooling-version notice, not a Hilt artifact) and a couple of `de.danoeh.antennapod.core.tests` unused-resource warnings, neither touched by this milestone.
+- `./gradlew checkstyle lint` — green. `./gradlew ktlintCheck` — green. **No D10 rung used at any point in this milestone** — lint has been green on the first Hilt-generating module (both at Step 2, unconsumed, and at Step 6/8, with `@AndroidEntryPoint`-generated code in both `:ui:preferences` and `:app`) without any `lint { }` block, any `@SuppressLint`, or any baseline.
+- `./gradlew :ui:preferences:testFreeDebugUnitTest --rerun :ui:preferences:testPlayDebugUnitTest --rerun :app:testPlayDebugUnitTest --rerun` — all green.
+
+**AC1 — full per-class table, both flavours, re-derived fresh:** 14 classes, **64** tests, 0 failures, 0 errors on both `testFreeDebugUnitTest` and `testPlayDebugUnitTest`:
+
+| Class | Tests |
+|---|---|
+| GpodderAuthenticationFragmentCharacterizationTest | 9 |
+| SynchronizationPreferencesFragmentCharacterizationTest | 8 |
+| SynchronizationPreferencesViewModelTest | 7 |
+| GpodderAuthenticationFragmentAsyncCharacterizationTest | 6 |
+| NextcloudAuthenticationFragmentCharacterizationTest | 6 |
+| SyncSettingsHarnessSmokeTest | 6 |
+| AuthenticationDialogCharacterizationTest | 4 |
+| SynchronizationPreferencesFragmentLifecycleTest | 4 |
+| SyncSettingsSeamCharacterizationTest | 4 |
+| SyncSettingsScreenshotCaptureTest | 3 |
+| DefaultSyncSettingsRepositoryTest | 3 |
+| SyncSettingsHiltGraphTest | 2 |
+| AuthenticationDialogJavaInteropTest | 1 |
+| GpodderAuthenticationFragmentCancellationTest | 1 |
+
+Matches AC1 exactly, row for row, on both flavours.
+
+**AC4 (re-verified at Step 8):** `--diff-filter=M` on `ui/preferences/src/test/` → exactly 6 files; `--diff-filter=A` → exactly 4 files; `--diff-filter=D` → empty. Matches.
+
+**AC8 / AC9:** `git diff origin/develop -- gradle/libs.versions.toml` is exactly the one `hilt-android-testing` line. `git diff origin/develop -- ui/preferences/build.gradle` is exactly the 2 plugin aliases, the `hilt {}` block, `implementation libs.hilt.android` + `ksp libs.hilt.compiler`, `testImplementation libs.hilt.android.testing` + `kspTest libs.hilt.compiler` — nothing else, no `kapt`, no `annotationProcessor` for Hilt, no flavoured `ksp*` configuration.
+
+**AC15:** `git grep -n "@Singleton\|@ActivityRetainedScoped\|@ViewModelScoped\|@ActivityScoped" -- 'ui/preferences/src/main/**'` → empty. The binding is unscoped.
+
+**AC17:** `git diff --name-only origin/develop` lists exactly 18 files, every one on the File Scope list. `git diff origin/develop -- storage/ net/ event/ model/ ui/common/ app-wearos/ settings.gradle build.gradle common.gradle playFlavor.gradle` is empty. No `robolectric.properties` or `lint-baseline*.xml` anywhere in the repo. No `@Composable`/`ComposeView`/`collectAsState` in the slice.
+
+**AC16 — `!!` and queue-reference counts, exactly matching the committed numbers:**
+
+| File | `!!` |
+|---|---|
+| `SynchronizationPreferencesFragment.kt` | **19** (down from 22) |
+| `GpodderAuthenticationFragment.kt` | **11** (unchanged) |
+| `NextcloudAuthenticationFragment.kt` | **7** (unchanged) |
+| `SynchronizationPreferencesViewModel.kt` | **0** (unchanged) |
+| `AuthenticationDialog.kt` | **0** (unchanged) |
+| `SyncSettingsRepository.kt` | **1** (new) |
+| `SyncSettingsModule.kt` | **0** (new) |
+| **Total** | **38** (down from 40) |
+
+**Two AC-wording discrepancies found while running the exact literal commands, recorded rather than silently reconciled (same category as the D3 grep and AC3 diff-filter findings, but not blocking — no design trade-off, and the underlying facts are unambiguous):**
+
+1. **AC14's literal grep** — `git grep -n "SynchronizationQueue" -- 'ui/preferences/src/main/**'` — does **not** return hits "only in `SyncSettingsRepository.kt`" as AC14 states. It also returns `GpodderAuthenticationFragment.kt:23,83,238` and `NextcloudAuthenticationFragment.kt:16,95,99`, because those two files are explicitly out of scope (D5) and still reference `SynchronizationQueue` directly — exactly as the plan intends (D5's "7 → 1, not 7 → 0"). AC14's own prose ("the fragment no longer names the type at all") is true of *`SynchronizationPreferencesFragment.kt` specifically* — verified directly: `grep -n "SynchronizationQueue" .../SynchronizationPreferencesFragment.kt` returns nothing — but the grep command as literally written is scoped to the whole module, not just that one file, so it does not return what the AC claims. This looks like the glob should have named the fragment file specifically rather than the whole `src/main/**` tree.
+2. **AC16's second grep**, same shape: `git grep -c "SynchronizationQueue.instance" -- 'ui/preferences/src/main/**'` returns **three** lines (`GpodderAuthenticationFragment.kt:2`, `NextcloudAuthenticationFragment.kt:2`, `SyncSettingsRepository.kt:1` — 5 total occurrences), not "→ 1, in `SyncSettingsRepository.kt`" as stated, for the identical reason: the two deferred fragments' remaining `.instance!!` sites are still there by design and still match a module-wide grep.
+
+Both AC14's and AC16's **`!!`-count and per-file tables (the primary, numbered claims of each criterion) are exact and correct** — only the supplementary `SynchronizationQueue`/`.instance` grep's scope is imprecise. Flagged for José; does not block, since (a) the fragment-scoped check both ACs' prose actually describes is confirmed true, (b) D5's "40 → 38, not 40 → 33" and "7 → 1, not 7 → 0" framing is exactly what's on disk, and (c) no production change would alter this — only the grep's path glob would need narrowing to the single file.
+
+**AC23 — dependency configuration diff, Step 1 vs Step 8:** `hilt-android-testing:2.58`, `hilt-android:2.58`, `dagger:2.58`, `dagger-lint-aar:2.58`, `hilt-core:2.58`, `javax.inject:1` now present on `playDebugUnitTestRuntimeClasspath` (all `strictly`/exact versions). **No other artifact's resolved version moved**: coroutines confirmed still `1.9.0`, lifecycle still `2.9.4`, Robolectric still `4.16` — diffed directly against the Step 1 capture.
+
+**D10 rung used:** none. Recorded explicitly per AC22.
+
+**Step 6a host-gate result, restated in one line (not re-run — no production code changed after Step 6):** the pre-existing instrumented `PreferencesTest` matched Step 1's baseline row-for-row (22/22, 0 mismatches) and all six manual-checklist items passed with zero crashes; `assemblePlayDebugAndroidTest` (run again above) assembles `PreferencesTest` but does not execute it, so CI carries no standing guard for the other nine preference fragments — this remains accepted residual risk per D15, not closed by this milestone.
+
+Step 8 complete, no repo diff. Continuing to Step 9.
+
+### Step 9 — Documentation.
+
+Touched `ui/preferences/README.md`, `tasks/antennapod-sync-settings-di-milestone-18.md` (this file, throughout), `tasks/antennapod-sync-settings-modernization-future-work.md`, `features/antennapod-sync-settings-di-milestone-18.checkpoint.md`.
+
+- **`ui/preferences/README.md`** — added conventions 17–20, numbered from 17 as specified, phrased as long-term-stable module rules with no milestone number or task-file reference: (17) the seam reads `SynchronizationQueue.instance` per call and never caches it, because the module's tests install their double by assigning that global (D4); (18) `HiltTestApplication` is applied per test class via `@Config`, never a module `robolectric.properties`, because this module's whole test source set is one slice (D11); (19) `SynchronizationPreferencesViewModel`'s no-arg secondary constructor exists only so the frozen suite can construct it, and production acquisition must go through `HiltViewModelFactory` (D6); (20) every `PreferenceFragmentCompat` in this module is hosted in production by `:app`'s shared `PreferenceActivity`, which hosts ten of them, so annotating one fragment `@AndroidEntryPoint` changes the host class for all ten, verified by running the app and `:app`'s existing instrumented `PreferencesTest`, not by this module's unit tests (D15).
+- **`tasks/antennapod-sync-settings-modernization-future-work.md`** — added an "Outcome" block to the Milestone 18 section recording: the `kotlinx-coroutines-test`/Turbine expectation retired (D8); the four deferred `SynchronizationQueue.instance!!` sites named by file and line (`GpodderAuthenticationFragment.kt:83,238`; `NextcloudAuthenticationFragment.kt:95,99`); `SynchronizationCredentials` still unwrapped and exactly why (D14); D6's no-arg constructor dated for removal at Milestone 20; and D15's accepted residual risk restated in full (five of nine sibling fragments never opened, neither gate half runs in CI, no automated `PreferenceActivity` unit test added).
+- **`features/antennapod-sync-settings-di-milestone-18.checkpoint.md`** — Status, Last updated, Lifecycle progress and the Resume command all updated to reflect implementation complete, pointing the next stage at `migration-code-reviewer` with a pointer to the two in-flight plan amendments (D3/AC6, D5/AC3) and the three non-blocking AC-wording findings (AC23, AC14, AC16), so the reviewer doesn't have to re-derive any of it from the raw diff.
+- **This file** — Implementation Notes populated throughout, per step, as work proceeded (this is that same section).
+
+**Gate:** `./gradlew ktlintCheck` and the full `:ui:preferences` unit suite (both flavours) re-run after the doc changes — both green, no regression (doc-only changes, as expected). No `res/` file touched anywhere in the milestone; no new user-visible string; no code comments added to any source file.
+
+Step 9 complete.
+
+## Final summary — all 10 steps complete, all 24 Acceptance Criteria satisfied
+
+### Commit message
+
+Seven commits on `di/ui-preferences-sync-settings-milestone-18` (branched from `origin/develop` at `b8eda5b674f00b0fa7df1ffc2a5283510a4a6e4a`), one per the plan's Steps 2, 3, 4, 5, 6, 7, 9 (Steps 1, 6a, 8 produced no repo diff and folded into the following commit):
+
+1. `06610a700` — `feat(ui:preferences): wire Hilt + KSP into the module, add the SyncSettingsRepository seam unconsumed (Milestone 18 Step 2)`
+2. `0aad91aa7` — `test(ui:preferences): characterize four uncovered sync-settings behaviors before the seam lands (Milestone 18 Step 3)`
+3. `895158662` — `test(ui:preferences): stand up Hilt test infrastructure with zero production diff (Milestone 18 Step 4)`
+4. `cd22e94f1` — `feat(ui:preferences): make SynchronizationPreferencesViewModel a @HiltViewModel (Milestone 18 Step 5)`
+5. `73ec95a62` — `feat(ui:preferences,app): @AndroidEntryPoint on the fragment and PreferenceActivity; route the three queue call sites through the seam (Milestone 18 Step 6)` (also carries the José-approved 7th host-identifier substitution)
+6. `e244f64fa` — `test(ui:preferences): prove the Hilt graph is real, not an inert default-factory fallback (Milestone 18 Step 7)` (also carries Step 6a's evidence)
+7. Step 9 (documentation) — pending commit at time of writing this summary.
+
+Track: `di`. Module: `:ui:preferences` (slice `screen/synchronization/`). Summary: stood up the repository's first Hilt/KSP graph — `SyncSettingsRepository`/`SyncSettingsModule` seam, `@HiltViewModel` on the ViewModel, `@AndroidEntryPoint` on the fragment and on `PreferenceActivity` — inside an equivalence proof rather than instead of one: the 55-test Milestone 15/17 characterization suite stayed green throughout, with zero assertion changes anywhere, and grew to 64 with new tests that pin the seam's read-timing, the graph's realness, and previously-uncovered behavior. Milestone: `antennapod-sync-settings-di-milestone-18`.
+
+### Test commands run
+
+- `./gradlew :ui:preferences:testFreeDebugUnitTest --rerun` — before (Step 1): PASS (55). After (Step 8/final): PASS (64).
+- `./gradlew :ui:preferences:testPlayDebugUnitTest --rerun` — before: PASS (55). After: PASS (64). (CI runs only this flavour for the module; both are run locally per `AGENTS.md`.)
+- `./gradlew :app:testPlayDebugUnitTest --rerun` — before: PASS (4 classes, 29 tests). After: PASS, same 4 classes, same per-class counts.
+- `./gradlew :app:connectedPlayDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=de.test.antennapod.ui.PreferencesTest` (instrumented, real device/emulator) — before (Step 1): 22 tests, 19 PASS, 3 SKIPPED (hardware-dependent), 0 FAILED. After (Step 6a): identical, row-for-row, 0 mismatches.
+- `./gradlew :app:assembleDebug` — PASS at every step checked.
+- `./gradlew assemblePlayDebug assemblePlayRelease assembleFreeRelease assemblePlayDebugAndroidTest` — PASS (Steps 2, 6, 8).
+- `./gradlew checkstyle lint` — PASS at every step checked (Steps 2, 4, 6, 8). No D10 rung ever needed.
+- `./gradlew ktlintCheck` — PASS at every step.
+- Manual app run: `./gradlew --console=plain :app:installPlayDebug && adb shell monkey -p de.danoeh.antennapod.debug 1` (Step 6a) — succeeded; six-item checklist all PASS, zero crashes (full logcat scan for `FATAL EXCEPTION`/`AndroidRuntime` across the session: zero matches).
+
+### Characterization test results
+
+Per test named in the Plan (D12/Step 3, D9/Step 7), explicit before/after status and what each pins:
+
+| Test | Before | After | Pins |
+|---|---|---|---|
+| `DefaultSyncSettingsRepositoryTest.testReadsDelegateToSynchronizationSettingsOnEveryCall` | N/A (new, Step 2) | PASS | The repository's three read methods re-delegate to `SynchronizationSettings` on every call, observing writes made between calls. |
+| `DefaultSyncSettingsRepositoryTest.testQueueCommandsDelegateToWhicheverQueueIsInstalledAtCallTime` | N/A (new, Step 2) | PASS | Queue commands go to whichever `SynchronizationQueue.instance` is installed at call time, not one cached at construction. |
+| `DefaultSyncSettingsRepositoryTest.testQueueCommandThrowsNullPointerExceptionWhenNoQueueIsInstalled` | N/A (new, Step 2) | PASS | The `!!` accessor throws `NullPointerException` (not `IllegalStateException`) when no queue is installed — matches production's exception type. |
+| `SyncSettingsSeamCharacterizationTest.testQueueIsResolvedFromTheGlobalAtEachClickNotCachedAtAttach` | N/A (new, Step 3); green again at Step 6 with the seam consuming it | PASS both times | Rules out an injection-time-cached queue shape — the fragment reads whichever queue is installed at click time. |
+| `SyncSettingsSeamCharacterizationTest.testLogoutRowClearsCredentialsFlipsGpodnetNotificationsAndThenClearsTheQueue` | N/A (new, Step 3); green again at Step 6 | PASS both times | Logout ordering: credentials cleared, gpodnet-notifications flag flipped, *then* queue cleared. |
+| `SyncSettingsSeamCharacterizationTest.testSharedAxisTransitionsAndSurfaceBackgroundAreAppliedToTheAttachedFragment` | Green at Step 3 (no `Hilt_` superclass) | Green at Step 6 (with `Hilt_SynchronizationPreferencesFragment` inserted) | `AnimatedPreferenceFragment`'s four `MaterialSharedAxis` transitions and `colorSurface` background survive the Hilt transform. |
+| `SyncSettingsSeamCharacterizationTest.testFragmentRemainsInstantiableByFragmentFactory` | Green at Step 3 | Green at Step 6 | The fragment stays public with a no-arg constructor, reflectively instantiable, through the inserted `Hilt_` superclass. |
+| `SyncSettingsHiltGraphTest.testFragmentFieldInjectionReceivesTheBoundRepository` | N/A (new, Step 7) | PASS | `@AndroidEntryPoint` field injection actually happened — the bound `@BindValue` fake, not the production default, received the click. |
+| `SyncSettingsHiltGraphTest.testViewModelIsConstructedByHiltWithTheBoundRepository` | N/A (new, Step 7) | PASS | `HiltViewModelFactory`, not `NewInstanceFactory` calling D6's no-arg constructor, built the ViewModel — the rendered subtitle reflects the bound fake's report. |
+| The 55 pre-existing tests (11 classes, `Gpodder Char` 9 ... `Gpodder Cancellation` 1) | PASS at Step 1 | PASS at every subsequent step, same per-class counts, zero assertion changes | The full pre-existing regression net — proves the DI seam is behaviorally transparent to everything it wraps. |
+
+### Deviations from plan
+
+Two in-flight amendments, both proposed by the developer and approved by José, both recorded with dated notes directly in the Plan section (not just here):
+
+1. **D3/AC6's grep target corrected from `SyncSettingsRepository` to `SyncSettingsModule`** (Step 2). The original target never appears in `:app`'s generated Dagger sources because Dagger only names a binding's interface type in generated code once something consumes it, and Step 2 deliberately leaves the binding unconsumed. `SyncSettingsModule` is the string that actually proves cross-module aggregation and was confirmed present in `PodcastApp_HiltComponents.java`/`PodcastApp_ComponentTreeDeps.java`.
+2. **D5/AC3 corrected from six to seven host-identifier substitutions** (Step 6). A previously-uninventoried seventh `Robolectric.buildActivity(SyncSettingsTestHost::class.java)` call in `SynchronizationPreferencesFragmentCharacterizationTest.kt`'s `testUnrecognisedProviderKeyThrowsAfterClearingHeaderTitle` broke once the fragment became `@AndroidEntryPoint`. Repointed to `SyncSettingsHiltTestHost`, the same one-identifier substitution as the other six — restores rather than weakens the test's original equivalence check.
+
+One mechanical fix applied directly, without escalation, since it involved no design trade-off (documented in Step 4's notes): the plan's literal `@get:Rule @JvmField val hiltRule = HiltAndroidRule(this)` snippet is a contradictory Kotlin annotation-targeting combination that compiles but never registers with JUnit; fixed to the standard `@get:Rule` idiom (no `@JvmField`) across all five affected test classes.
+
+Three additional wording imprecisions found and disclosed, not silently corrected, none requiring a plan amendment (no design trade-off, underlying facts unambiguous, folded into or noted alongside the AC-satisfying evidence):
+
+1. **AC23**: the Step 1 baseline's unit-test runtime classpath already contained 3 `javax.inject:javax.inject:1` entries transitively via Robolectric, unrelated to Hilt — `com.google.dagger:*` (the substantively important part of the claim) was genuinely zero at baseline and is genuinely present at `2.58` after.
+2. **AC14 and AC16's `SynchronizationQueue`/`.instance` module-wide grep clauses** also match `GpodderAuthenticationFragment.kt` and `NextcloudAuthenticationFragment.kt`'s deliberately-deferred sites (D5) — correct per the plan's own design, but the two ACs' prose ("only in `SyncSettingsRepository.kt`" / "→ 1") describes the fragment-specific case, not the module-wide grep's actual output. Both ACs' primary, numbered claims (the `!!` per-file table, `SynchronizationPreferencesFragment.kt` no longer naming the type) are exact and independently verified.
+
+No characterization test was weakened, skipped, or deleted at any point. No test's assertions changed in any of the nine byte-identical pre-existing files. No out-of-File-Scope file was touched (final `git diff --name-only origin/develop` lists exactly the 18 code/config files plus the 4 documentation files, all on the File Scope list).
 
