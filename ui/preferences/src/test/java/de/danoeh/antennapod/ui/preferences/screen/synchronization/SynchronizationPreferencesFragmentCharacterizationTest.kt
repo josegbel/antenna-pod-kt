@@ -5,6 +5,9 @@ import android.os.Looper
 import android.text.Spanned
 import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.Preference
+import dagger.hilt.android.testing.HiltAndroidRule
+import dagger.hilt.android.testing.HiltAndroidTest
+import dagger.hilt.android.testing.HiltTestApplication
 import de.danoeh.antennapod.net.sync.serviceinterface.SynchronizationProvider
 import de.danoeh.antennapod.net.sync.serviceinterface.SynchronizationQueue
 import de.danoeh.antennapod.storage.preferences.SynchronizationCredentials
@@ -20,12 +23,14 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 
 private const val KEY_DESCRIPTION = "preference_synchronization_description"
@@ -34,8 +39,13 @@ private const val KEY_SYNC = "pref_synchronization_sync"
 private const val KEY_FORCE_FULL_SYNC = "pref_synchronization_force_full_sync"
 private const val KEY_LOGOUT = "pref_synchronization_logout"
 
+@HiltAndroidTest
+@Config(application = HiltTestApplication::class)
 @RunWith(RobolectricTestRunner::class)
 class SynchronizationPreferencesFragmentCharacterizationTest {
+
+    @get:Rule
+    val hiltRule = HiltAndroidRule(this)
 
     private lateinit var context: Context
     private lateinit var recordingQueue: RecordingSynchronizationQueue
@@ -56,7 +66,7 @@ class SynchronizationPreferencesFragmentCharacterizationTest {
     }
 
     private fun attachFragment(): Pair<AppCompatActivity, SynchronizationPreferencesFragment> {
-        val activity = Robolectric.buildActivity(SyncSettingsTestHost::class.java).setup().get()
+        val activity = Robolectric.buildActivity(SyncSettingsHiltTestHost::class.java).setup().get()
         val fragment = SynchronizationPreferencesFragment()
         activity.supportFragmentManager.beginTransaction()
             .add(android.R.id.content, fragment, "sync-settings")
