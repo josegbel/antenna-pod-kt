@@ -25,8 +25,8 @@ Step 6a's manual/instrumented host-gate evidence (D15/AC24) is complete: the pre
 - [x] Plan (legacy-android-planner) — 2026-09-01, patched 2026-09-16 (D1–D15, 10 steps/7 commits, 24 ACs, OQ1–OQ3 all non-blocking; further amended in-flight during implementation, see Last updated)
 - [x] Red-team plan (legacy-android-red-team) — 2026-09-16, APPROVE at loop 2/2 (loop 1 CHALLENGE on `PreferenceActivity` ripple, resolved)
 - [x] Implement (android-migration-developer) — **complete 2026-09-16.** Branch `di/ui-preferences-sync-settings-milestone-18`, 7 commits. All 10 steps done, all 24 ACs verified (commands and outputs recorded in the task file's Implementation Notes section). Suite 55 → 64, all green on both flavours throughout. `checkstyle lint` and `ktlintCheck` green at every checkpoint — no D10 rung used anywhere in the milestone.
-- [ ] Code review (migration-code-reviewer) — max 3 loops
-- [ ] Red-team implementation (legacy-android-red-team)
+- [x] Code review (migration-code-reviewer) — 2026-09-16, APPROVE at loop 1/3. No CRITICAL/MAJOR findings. Every load-bearing claim (File Scope, D4's per-call queue read, D9's real-graph proof, zero-assertion-change guarantee, 64/64 green both flavours, mixed-processor build gate) independently reproduced against actual repo state, not taken from Implementation Notes' narration. 3 MINOR findings, all already-disclosed AC-wording precision issues (AC14/AC16 grep scope vs. prose, AC23's javax.inject baseline, one characterization test found to duplicate pre-existing coverage) — none block merge.
+- [x] Red-team implementation (legacy-android-red-team) — 2026-09-16, APPROVE at loop 1/2. Read every touched file directly, confirmed D4 introduces no new concurrency exposure, D9's graph-is-real test genuinely discriminates, D15's PreferenceActivity ripple stays bounded as scoped, and no 8th uninventoried buildActivity substitution slipped through. One MINOR finding: Step 6a's manual checklist never exercises a configuration-change/rotation of the Sync Settings screen specifically — noted for future-work, not a merge blocker.
 - [ ] PR opened
 
 ## Decisions for next session
