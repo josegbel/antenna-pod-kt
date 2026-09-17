@@ -6,6 +6,9 @@ import android.graphics.Canvas
 import android.view.View
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.MaterialToolbar
+import dagger.hilt.android.testing.HiltAndroidRule
+import dagger.hilt.android.testing.HiltAndroidTest
+import dagger.hilt.android.testing.HiltTestApplication
 import de.danoeh.antennapod.net.sync.serviceinterface.SynchronizationQueue
 import de.danoeh.antennapod.storage.preferences.SynchronizationCredentials
 import de.danoeh.antennapod.storage.preferences.SynchronizationSettings
@@ -18,6 +21,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -26,10 +30,14 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
+@HiltAndroidTest
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [34], qualifiers = "w411dp-h891dp-xhdpi")
+@Config(sdk = [34], qualifiers = "w411dp-h891dp-xhdpi", application = HiltTestApplication::class)
 class SyncSettingsScreenshotCaptureTest {
+
+    @get:Rule
+    val hiltRule = HiltAndroidRule(this)
 
     private lateinit var context: Context
 

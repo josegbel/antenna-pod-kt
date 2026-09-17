@@ -3,6 +3,9 @@ package de.danoeh.antennapod.ui.preferences.screen.synchronization
 import android.content.Context
 import android.os.Looper
 import androidx.appcompat.app.AppCompatActivity
+import dagger.hilt.android.testing.HiltAndroidRule
+import dagger.hilt.android.testing.HiltAndroidTest
+import dagger.hilt.android.testing.HiltTestApplication
 import de.danoeh.antennapod.event.SyncServiceEvent
 import de.danoeh.antennapod.net.sync.serviceinterface.SynchronizationProvider
 import de.danoeh.antennapod.net.sync.serviceinterface.SynchronizationQueue
@@ -17,15 +20,22 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
 
+@HiltAndroidTest
+@Config(application = HiltTestApplication::class)
 @RunWith(RobolectricTestRunner::class)
 class SynchronizationPreferencesFragmentLifecycleTest {
+
+    @get:Rule
+    val hiltRule = HiltAndroidRule(this)
 
     private lateinit var context: Context
 
@@ -66,7 +76,7 @@ class SynchronizationPreferencesFragmentLifecycleTest {
 
         EventBus.getDefault().postSticky(SyncServiceEvent(R.string.sync_status_started))
 
-        val activity = Robolectric.buildActivity(SyncSettingsTestHost::class.java).setup().get()
+        val activity = Robolectric.buildActivity(SyncSettingsHiltTestHost::class.java).setup().get()
         attach(activity)
 
         assertEquals(context.getString(R.string.sync_status_started), activity.supportActionBar!!.subtitle)
@@ -74,7 +84,7 @@ class SynchronizationPreferencesFragmentLifecycleTest {
 
     @Test
     fun testSyncEventIgnoredWhenNotConnected() {
-        val activity = Robolectric.buildActivity(SyncSettingsTestHost::class.java).setup().get()
+        val activity = Robolectric.buildActivity(SyncSettingsHiltTestHost::class.java).setup().get()
         attach(activity)
         assertNull(activity.supportActionBar!!.subtitle)
 
@@ -91,7 +101,7 @@ class SynchronizationPreferencesFragmentLifecycleTest {
         SynchronizationSettings.setLastSynchronizationAttemptSuccess(true)
         SynchronizationSettings.updateLastSynchronizationAttempt()
 
-        val activity = Robolectric.buildActivity(SyncSettingsTestHost::class.java).setup().get()
+        val activity = Robolectric.buildActivity(SyncSettingsHiltTestHost::class.java).setup().get()
         attach(activity)
 
         EventBus.getDefault().post(SyncServiceEvent(R.string.sync_status_success))
@@ -107,7 +117,7 @@ class SynchronizationPreferencesFragmentLifecycleTest {
 
     @Test
     fun testOnStartSetsTitleAndOnStopSetsEmptySubtitleWhereasDisconnectedSetsNull() {
-        val controller = Robolectric.buildActivity(SyncSettingsTestHost::class.java)
+        val controller = Robolectric.buildActivity(SyncSettingsHiltTestHost::class.java)
         val activity = controller.setup().get()
         attach(activity)
 

@@ -93,6 +93,67 @@ this suite is what proves the seam preserves behavior. Treat it as the thing thi
 green throughout, not something to rewrite alongside the DI change — a suite that gets rewritten at the
 same time it's supposed to be proving equivalence proves nothing.
 
+**Outcome (done, PR pending).** Stood up the repo's first Hilt/KSP graph on `:ui:preferences`:
+`SyncSettingsRepository` (six methods — three reads the `@HiltViewModel` needs, three commands the
+`@AndroidEntryPoint` fragment needs) bound by `SyncSettingsModule` (`@Module @InstallIn(SingletonComponent::class)`
++ `@Binds`, unscoped). `SynchronizationPreferencesViewModel` is now `@HiltViewModel` with an `@Inject`
+constructor; `SynchronizationPreferencesFragment` is `@AndroidEntryPoint` with an injected
+`SyncSettingsRepository` field; `PreferenceActivity` (`:app`) got the two-line `@AndroidEntryPoint`
+addition a Hilt fragment's host requires. The 55-test Milestone 15/17 suite stayed green throughout and
+ends byte-identical in 9 of 15 files; the suite grew to 64 (9 new tests across 3 new classes: `DefaultSyncSettingsRepositoryTest`,
+`SyncSettingsSeamCharacterizationTest`, `SyncSettingsHiltGraphTest`).
+
+**Retired, not carried forward: `kotlinx-coroutines-test`/Turbine.** The premise this expectation rested
+on — a `ViewModel` read becoming `suspend` behind the injected repository — never became necessary. Every
+value the seam wraps is a synchronous `SharedPreferences` read or a synchronous `SynchronizationQueue`
+call; making any of them `suspend` would insert a suspension point between `onStart()` and the first
+`render()`, which two frozen `SynchronizationPreferencesFragmentLifecycleTest` tests discriminate on. The
+seam is entirely non-`suspend`; the milestone's only catalog addition is `hilt-android-testing`.
+
+**The four deferred `SynchronizationQueue.instance!!` sites, by name, inherited by Milestone 19/20 (or
+whichever milestone next touches these two files):** `GpodderAuthenticationFragment.kt:83` (`clear()`,
+host step) and `:238` (`syncImmediately()`, finish step); `NextcloudAuthenticationFragment.kt:95`
+(`clear()`) and `:99` (`fullSync()`), both inside `onNextcloudAuthenticated`. Neither dialog fragment
+became `@AndroidEntryPoint` — doing so would have required doubling the Hilt test-infrastructure
+footprint (from 4 affected test classes/21 tests to 10/48, dragging in the Java interop oracle, which KSP
+cannot process) for a marginal `di` gain. The slice's `SynchronizationQueue.instance!!` count went **7 → 1**,
+not 7 → 0, and the total `!!` count went **40 → 38**, not 40 → 33. A future milestone that gives these two
+dialogs a ViewModel (Milestone 20's Gpodder-wizard ViewModel, if that's still the plan) is the natural
+place to also route these four sites through the seam.
+
+**`SynchronizationCredentials` is still unwrapped, and so is `SynchronizationSettings.setSelectedSyncProvider`/`getSelectedSyncProviderKey`,
+despite the milestone description naming `SynchronizationCredentials` explicitly.** Every one of its
+slice call sites is in code this milestone didn't open: 9 in `GpodderAuthenticationFragment`, 4 in
+`NextcloudAuthenticationFragment` (both deferred, above), and 5 in `SynchronizationPreferencesFragment` of
+which 4 are inside `updateScreen()` and the provider-chooser dialog — state hoisting that's Milestone 20's
+scope (see that section above), and 1 in the logout listener, which alone wasn't reason enough to add a
+seam method three of its four callers would bypass. If a future milestone wants this wrapped, it's one
+more interface method (e.g. `clearCredentials()`), one more delegation in `DefaultSyncSettingsRepository`,
+and one more substitution at `SynchronizationPreferencesFragment.kt`'s logout listener — bounded and
+already scoped, just not done here.
+
+**D6's ViewModel no-arg secondary constructor is a dated test affordance, and Milestone 20 is where it
+gets removed.** `SynchronizationPreferencesViewModel`'s `constructor() : this(DefaultSyncSettingsRepository())`
+exists only because seven `SynchronizationPreferencesViewModelTest` `@Test` bodies construct the ViewModel
+directly, without a Hilt graph. Milestone 20's Compose rewrite is expected to replace or substantially
+rewrite that test file anyway (the Views it drives today won't exist), which is the natural point to drop
+the secondary constructor and require `@Inject`-only construction.
+
+**Accepted residual risk, named rather than left implicit (D15).** `PreferenceActivity` is now a Hilt
+host for **ten** preference fragments, of which this milestone's automated suite covers exactly one.
+The ripple was gated at Step 6a by re-running `:app`'s pre-existing instrumented `PreferencesTest`
+(22 tests, covering 4 of the other nine fragments, row-for-row identical before/after) and a manual app
+run over a six-item checklist (Settings, the Sync screen incl. its provider-chooser dialog, User Interface
+and Playback as non-Hilt siblings, back-stack pop, both search-result routes with highlight, and the
+Notification Preferences Intent redirect) — all passing. What that gate does **not** reach: five of the
+nine sibling fragments (Import/Export, Swipe, Automatic Deletion, Parental Control, and
+`NotificationPreferencesFragment` itself, which `openScreen` never attaches above API 26) were opened by
+neither half; neither half runs in CI (`assemblePlayDebugAndroidTest` assembles `PreferencesTest` but
+never executes it); and no automated unit test of `PreferenceActivity` itself was added, since doing so
+would require a fifth unproven Hilt/Robolectric processor arrangement in a pure-Java module. Any future
+milestone that touches `PreferenceActivity` again should re-verify this ripple rather than assume this
+milestone's sample still holds.
+
 ### Milestone 19 — `:storage:preferences` (scope TBD, may not proceed)
 Decide whether `SynchronizationSettings`/`SynchronizationCredentials` convert to Kotlin at all. Research found this is genuinely cross-module, not local: `SynchronizationSettings` has 10 call sites outside the slice across `:net:sync:service`, `:net:download:service`, `:app`, and this module's own `NotificationPreferencesFragment`; `SynchronizationCredentials.clear()` pulls in `UserPreferences.setGpodnetNotificationsEnabled()`, coupling into the module's largest Java class; and `:storage:preferences` has no test source set at all, so this milestone carries its own characterization-test bill before any conversion. A smaller alternative that satisfies Milestone 18's DI seam without a full conversion: wrap the existing Java statics behind an injectable Kotlin interface and leave `:storage:preferences` itself in Java, same interop pattern used throughout this portfolio (Kotlin calling Java is not a hazard). Recommend deciding this on its own merits rather than as a default "finish the migration" move.
 

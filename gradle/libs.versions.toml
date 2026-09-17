@@ -66,6 +66,7 @@ google-play-services-base = { module = "com.google.android.gms:play-services-bas
 google-play-services-cast-framework = { module = "com.google.android.gms:play-services-cast-framework", version = "21.2.0" }
 hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
 hilt-compiler = { module = "com.google.dagger:hilt-android-compiler", version.ref = "hilt" }
+hilt-android-testing = { module = "com.google.dagger:hilt-android-testing", version.ref = "hilt" }
 kotlin-bom = { module = "org.jetbrains.kotlin:kotlin-bom", version = "1.9.24" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
